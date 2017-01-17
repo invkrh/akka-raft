@@ -132,7 +132,7 @@ class Server(id: Int,
   }
 
   override def postStop(): Unit = {
-    info(s"Server stops and cancel all timer tasks")
+    info(s"Server $id stops and cancel all timer tasks")
 
     /**
      * Note: if there are still some timer task when actor stopped (system stop),

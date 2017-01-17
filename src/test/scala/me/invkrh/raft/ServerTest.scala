@@ -23,23 +23,27 @@ class ServerTest
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }
-  
+
   override def afterEach(): Unit = {
-    
+    // Clean all available messages
+    within(10 seconds) {
+      while (msgAvailable) {
+        expectMsgType[Any]
+        Thread.sleep(10)
+      }
+    }
   }
 
   "Follower" should "return current term and success flag when AppendEntries is received" in {
-    val probe = TestProbe()
-    val serverActor = system.actorOf(Server.props(0, 1 second))
-    probe.send(serverActor, AppendEntries(0, 0, 0, 0, Seq[Entry](), 0))
-    probe.expectMsg(AppendEntriesResult(0, success = true))
+    val serverActor = system.actorOf(Server.props(0, 100 millis))
+    serverActor ! AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)
+    expectMsg(AppendEntriesResult(0, success = true))
     serverActor ! PoisonPill
   }
 
   it should "launch election after election timeout elapsed" in {
-    val probe = TestProbe()
-    val serverActor = system.actorOf(Server.props(0, 0.2 second, members = ArrayBuffer(probe.ref)))
-    probe.expectMsgType[RequestVote]
+    val serverActor = system.actorOf(Server.props(0, 100 millis, members = ArrayBuffer(self)))
+    expectMsgType[RequestVote]
     serverActor ! PoisonPill
   }
 
