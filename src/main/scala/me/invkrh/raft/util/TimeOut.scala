@@ -6,10 +6,14 @@ import scala.concurrent.duration.FiniteDuration
 import akka.actor.{Cancellable, Scheduler}
 
 class TimeOut(duration: FiniteDuration, action: => Unit)(implicit scheduler: Scheduler) {
-  private var cancellable: Cancellable = scheduler.scheduleOnce(duration)(action)
+  private var cancellable: Cancellable = _
   def reset(): Unit = {
-    cancellable.cancel()
+    stop()
     cancellable = scheduler.scheduleOnce(duration)(action)
   }
-  def stop(): Unit = { cancellable.cancel() }
+  def stop(): Unit = {
+    if (cancellable != null) {
+      cancellable.cancel()
+    }
+  }
 }
