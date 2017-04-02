@@ -49,10 +49,10 @@ class ServerTest
 
   it should "reset election timeout if AppendEntries msg is received" in {
     def heartbeatCheck(electionTimeout: FiniteDuration,
-                       sleepTime: FiniteDuration,
+                       heartbeatInterval: FiniteDuration,
                        heartbeat: Int) = {
-      require(electionTimeout > sleepTime)
-      val minDuration = sleepTime * heartbeat + electionTimeout
+      require(electionTimeout > heartbeatInterval)
+      val minDuration = heartbeatInterval * heartbeat + electionTimeout
       val maxDuration = minDuration * 2
       val serverActor =
         system.actorOf(Server.props(0, electionTimeout, members = ArrayBuffer(self)))
@@ -60,7 +60,7 @@ class ServerTest
       within(minDuration, maxDuration) {
         Future {
           for (i <- 0 until heartbeat) {
-            Thread.sleep(sleepTime.toMillis)
+            Thread.sleep(heartbeatInterval.toMillis)
             serverActor ! AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)
             info(s"heart beat $i is send")
           }
@@ -82,18 +82,35 @@ class ServerTest
   }
 
   it should "become leader when received messages of majority" in {
-    val probe1 = TestProbe()
-    val probe2 = TestProbe()
-    val members = ArrayBuffer.apply(probe1.ref, probe2.ref)
+    val probeNumber = 5
+    val probes = ArrayBuffer.tabulate(probeNumber)(_ => TestProbe())
+    val members = probes.map(_.ref)
     val server = system.actorOf(Server.props(0, 1 second, 0.5 second, members))
+    probes.zipWithIndex.foreach{
+      case (p, idx) =>
+        p expectMsg RequestVote(1, 0, 0, 0)
+        p.send(server, RequestVoteResult(1, voteGranted = idx >= probeNumber / 2)) // majority
+    }
+    probes.foreach{
+      p => p expectMsg AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)
+    }
+    server ! PoisonPill
+  }
 
-    probe1 expectMsg RequestVote(1, 0, 0, 0)
-    probe2 expectMsg RequestVote(1, 0, 0, 0)
-    probe1.send(server, RequestVoteResult(1, voteGranted = true))
-    probe2.send(server, RequestVoteResult(1, voteGranted = false))
-
-    probe1 expectMsg AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)
-    probe2 expectMsg AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)
+  it should "launch election of the next term when only minority granted" in {
+    val probeNumber = 5
+    val probes = ArrayBuffer.tabulate(probeNumber)(_ => TestProbe())
+    val members = probes.map(_.ref)
+    val server = system.actorOf(Server.props(0, 1 second, 0.5 second, members))
+    probes.zipWithIndex.foreach{
+      case (p, idx) =>
+        p expectMsg RequestVote(1, 0, 0, 0)
+        p.send(server, RequestVoteResult(1, voteGranted = idx < probeNumber / 2)) // minority
+    }
+    probes.foreach{
+      p => p expectMsg RequestVote(2, 0, 0, 0)
+    }
+    server ! PoisonPill
   }
 
 }
