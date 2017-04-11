@@ -1,62 +1,97 @@
 package me.invkrh.raft
 
 import scala.collection.mutable.ArrayBuffer
-import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.{Actor, ActorRef, Props, Scheduler}
 import me.invkrh.raft.RPCMessage._
-import me.invkrh.raft.util.{Logging, TimeOut}
+import me.invkrh.raft.util.{FixedTimer, IdentifyLogging}
 
 object Server {
   def props(id: Int,
-            electionTimeout: FiniteDuration,
-            heartBeat: FiniteDuration = 1 seconds,
+    electionTimeoutInMillis: Int,
+    heartBeatTimeoutInMillis: Int = 1000,
             members: ArrayBuffer[ActorRef] = new ArrayBuffer[ActorRef]()) =
-    Props(new Server(id, electionTimeout, heartBeat, members))
+    Props(new Server(id, electionTimeoutInMillis, heartBeatTimeoutInMillis, members))
 }
 
-class Server(id: Int,
-             electionTimeout: FiniteDuration,
-             heartBeatTimeout: FiniteDuration,
+class Server(val id: Int,
+  electionTimeoutInMillis: Int,
+  heartBeatTimeoutInMillis: Int,
              members: ArrayBuffer[ActorRef])
     extends Actor
-    with Logging {
+            with IdentifyLogging {
 
   import context._
   implicit val scheduler: Scheduler = context.system.scheduler
-
-  val electionTimer = new TimeOut(electionTimeout, startElection())
-  val heartBeatTimer = new TimeOut(heartBeatTimeout, dispatchHeartBeat())
-
+  
+  val electionTimer  = new FixedTimer(electionTimeoutInMillis, startElection())
+  val heartBeatTimer = new FixedTimer(heartBeatTimeoutInMillis, dispatchHeartBeat())
+  
+  // TODO: Add member list function
+  val log: ArrayBuffer[Entry] = new ArrayBuffer[Entry]()
   var curTerm = 0
   var votedFor: Option[Int] = None
-  val log: ArrayBuffer[Entry] = new ArrayBuffer[Entry]()
-
   var state = State.Follower
-
-  def distributeRPC(msg: Request): Unit = {
-    members.par.filter(_ != this) foreach (_ ! msg)
-  }
-
+  var voteGrantedNum = 1
   def startElection(): Unit = {
     state = State.Candidate
     curTerm = curTerm + 1
     votedFor = Some(id)
     info(s"Election for term $curTerm started, server $id becomes $state")
     become(candidate)
-    electionTimer.reset()
     distributeRPC(RequestVote(curTerm, id, 0, 0))
+    electionTimer.restart()
   }
-
-  def dispatchHeartBeat(): Unit = {
-    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
+  def distributeRPC(msg: Request): Unit = {
+    members.par.filter(_ != this) foreach (_ ! msg)
   }
+  def candidate: Receive = {
+    case RequestVoteResult(term, voteGranted) =>
+      if (curTerm > term) {
+        // Do nothing and no need to reply
+      } else if (curTerm < term) { // term is outdated
+        // reinitialise vote count
+        voteGrantedNum = 1
+        become(follower)
+      } else { // When curTerm == term
+        if (voteGranted) {
+          info(s"Received vote granted message from ${sender.path}")
+          voteGrantedNum = voteGrantedNum + 1
+          if (voteGrantedNum > members.size / 2) {
+            voteGrantedNum = 1
+            state = State.Leader
+            info(s"Election for term $curTerm is ended, server $id becomes $state")
+            become(leader)
+            electionTimer.stop()
+            heartBeatTimer.restart()
+          }
+        }
+      }
 
+    case AppendEntries(term, leadId, prevLogIndex, prevLogTerm, entries, leaderCommit) =>
+      if (curTerm > term) {
+        // rejects RPC and continues in candidate state
+        sender ! AppendEntriesResult(curTerm, success = false)
+      } else { // new leader detected, since term is at least as large as the current term
+        curTerm = term
+        become(follower)
+      }
+  }
+  def leader: Receive = {
+    case AppendEntriesResult(term, success) =>
+      if (curTerm > term) {
+        // message from old term
+      } else if (curTerm < term) { // term is outdated
+        curTerm = term
+        become(follower)
+      } else {
+        // When curTerm == term, good here, do nothing
+      }
+  }
   def follower: Receive = {
-
     case AppendEntries(term, _, _, _, _, _) =>
-      electionTimer.reset()
+      electionTimer.restart()
       if (curTerm > term) {
         sender ! AppendEntriesResult(curTerm, success = false)
       } else {
@@ -71,64 +106,22 @@ class Server(id: Int,
         if (votedFor.isEmpty) {
           votedFor = Some(cand)
           sender ! RequestVoteResult(curTerm, voteGranted = true)
-          electionTimer.reset()
+          electionTimer.restart()
         } else {
           sender ! RequestVoteResult(curTerm, voteGranted = false)
         }
       }
   }
-
-  var voteCount = 1
-  def candidate: Receive = {
-    case RequestVoteResult(term, voteGranted) =>
-      if (curTerm > term) {
-        // Do nothing
-      } else if (curTerm < term) { // term is outdated
-        voteCount = 1
-        become(follower)
-      } else { // When curTerm == term
-        if (voteGranted) {
-          voteCount = voteCount + 1
-          if (voteCount > members.size / 2) {
-            voteCount = 1
-            state = State.Leader
-            info(s"Election for term $curTerm is ended, server $id becomes $state")
-            become(leader)
-            electionTimer.stop()
-            heartBeatTimer.reset()
-          }
-        }
-      }
-
-    case AppendEntries(term, leadId, prevLogIndex, prevLogTerm, entries, leaderCommit) =>
-      if (curTerm > term) {
-        // rejects RPC and continues in candidate state
-        sender ! AppendEntriesResult(curTerm, success = false)
-      } else { // new leader detected
-        curTerm = term
-        become(follower)
-      }
+  def dispatchHeartBeat(): Unit = {
+    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
   }
-
-  def leader: Receive = {
-
-    case AppendEntriesResult(term, success) =>
-      if (curTerm > term) {
-        // message from old term
-      } else if (curTerm < term) { // term is outdated
-        curTerm = term
-        become(follower)
-      } else {
-        // When curTerm == term, good here, do nothing
-      }
-  }
-
   override def preStart(): Unit = {
     if (!members.contains(self)) {
       members += self
     }
-    info(s"Start as $state, intial term is $curTerm with election timeout $electionTimeout")
-    electionTimer.reset()
+    info(
+      s"Start as $state, intial term is $curTerm with election timeout $electionTimeoutInMillis ms")
+    electionTimer.restart()
   }
 
   override def postStop(): Unit = {
