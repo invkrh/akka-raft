@@ -3,22 +3,25 @@ package me.invkrh.raft
 import akka.actor.ActorRef
 
 object RPCMessage {
-  trait Request
+  
+  
   case class Command(key: String, value: Int)
   case class Entry(term: Int, command: Command)
-
+  
+  
+  trait Message {
+    def term: Int
+  }
   case class AppendEntries(term: Int,
                            leadId: Int,
                            prevLogIndex: Int,
                            prevLogTerm: Int,
                            entries: Seq[Entry],
                            leaderCommit: Int)
-      extends Request
+      extends Message
   case class RequestVote(term: Int, candidateId: Int, lastLogIndex: Int, lastLogTerm: Int)
-      extends Request
-  case class Join(ref: ActorRef) extends Request
-  case class Leave(ref: ActorRef) extends Request
+      extends Message
 
-  case class AppendEntriesResult(term: Int, success: Boolean)
-  case class RequestVoteResult(term: Int, voteGranted: Boolean)
+  case class AppendEntriesResult(term: Int, success: Boolean) extends Message
+  case class RequestVoteResult(term: Int, voteGranted: Boolean) extends Message
 }
