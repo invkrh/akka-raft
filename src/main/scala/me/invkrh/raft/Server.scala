@@ -1,39 +1,43 @@
 package me.invkrh.raft
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.language.postfixOps
 
 import akka.actor.{Actor, ActorRef, Props, Scheduler}
-import me.invkrh.raft.RPCMessage._
+import me.invkrh.raft.Message._
+import Exception._
 import me.invkrh.raft.util.{FixedTimer, IdentifyLogging}
 
 object Server {
   def props(id: Int,
-    electionTimeoutInMillis: Int,
-    heartBeatTimeoutInMillis: Int = 1000,
-            members: ArrayBuffer[ActorRef] = new ArrayBuffer[ActorRef]()) =
-    Props(new Server(id, electionTimeoutInMillis, heartBeatTimeoutInMillis, members))
+            electionTimeoutInMillis: Int,
+            heartBeatIntervalInMillis: Int): Props = {
+    require(electionTimeoutInMillis > heartBeatIntervalInMillis)
+    Props(new Server(id, electionTimeoutInMillis, heartBeatIntervalInMillis))
+  }
 }
 
 class Server(val id: Int,
-  electionTimeoutInMillis: Int,
-  heartBeatTimeoutInMillis: Int,
-             members: ArrayBuffer[ActorRef])
+             electionTimeoutInMillis: Int,
+             heartBeatTimeoutInMillis: Int)
     extends Actor
-            with IdentifyLogging {
+    with IdentifyLogging {
 
   import context._
   implicit val scheduler: Scheduler = context.system.scheduler
-  
-  val electionTimer  = new FixedTimer(electionTimeoutInMillis, startElection())
-  val heartBeatTimer = new FixedTimer(heartBeatTimeoutInMillis, dispatchHeartBeat())
-  
+
+  val electionTimer                  = new FixedTimer(electionTimeoutInMillis, startElection())
+  val heartBeatTimer                 = new FixedTimer(heartBeatTimeoutInMillis, dispatchHeartBeat())
+  val members: mutable.Set[ActorRef] = mutable.Set()
+
   // TODO: Add member list function
   val log: ArrayBuffer[Entry] = new ArrayBuffer[Entry]()
   var curTerm = 0
   var votedFor: Option[Int] = None
   var state = State.Follower
   var voteGrantedNum = 1
+
   def startElection(): Unit = {
     state = State.Candidate
     curTerm = curTerm + 1
@@ -43,18 +47,53 @@ class Server(val id: Int,
     distributeRPC(RequestVote(curTerm, id, 0, 0))
     electionTimer.restart()
   }
-  def distributeRPC(msg: Request): Unit = {
-    members.par.filter(_ != this) foreach (_ ! msg)
+  
+  def distributeRPC(msg: RPCMessage): Unit = {
+    members.par.filter(_ != self) foreach (_ ! msg)
   }
+  
+  def dispatchHeartBeat(): Unit = {
+    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
+  }
+
+  def follower: Receive = {
+    // Leader's request
+    case AppendEntries(term, _, _, _, _, _) =>
+      if (curTerm > term) {
+        sender ! AppendEntriesResult(curTerm, success = false)
+      } else {
+        curTerm = term
+        electionTimer.restart() // only valid heartbeat refresh election timer
+        sender ! AppendEntriesResult(curTerm, success = true)
+      }
+    // Candidate's request
+    case RequestVote(term, cand, lastIndex, lastTerm) =>
+      if (curTerm > term) {
+        sender ! RequestVoteResult(curTerm, voteGranted = false)
+      } else { // when curTerm <= term
+        curTerm = term
+        if (votedFor.isEmpty) {
+          votedFor = Some(cand)
+          sender ! RequestVoteResult(curTerm, voteGranted = true)
+          electionTimer.restart()
+        } else {
+          sender ! RequestVoteResult(curTerm, voteGranted = false)
+        }
+      }
+    // Irrelevant messages
+    case others: RPCMessage => throw new IrrelevantMessageException(others, sender)
+  }
+
   def candidate: Receive = {
     case RequestVoteResult(term, voteGranted) =>
       if (curTerm > term) {
-        // Do nothing and no need to reply
-      } else if (curTerm < term) { // term is outdated
+        warn(s"Candidate received obsolete RequestVoteResult with term $term")
+      } else if (curTerm < term) { // current term is outdated, a new leader was elected
         // reinitialise vote count
         voteGrantedNum = 1
+        curTerm = term
         become(follower)
-      } else { // When curTerm == term
+      } else { // curTerm == term)
         if (voteGranted) {
           info(s"Received vote granted message from ${sender.path}")
           voteGrantedNum = voteGrantedNum + 1
@@ -75,46 +114,33 @@ class Server(val id: Int,
         sender ! AppendEntriesResult(curTerm, success = false)
       } else { // new leader detected, since term is at least as large as the current term
         curTerm = term
-        become(follower)
-      }
-  }
-  def leader: Receive = {
-    case AppendEntriesResult(term, success) =>
-      if (curTerm > term) {
-        // message from old term
-      } else if (curTerm < term) { // term is outdated
-        curTerm = term
-        become(follower)
-      } else {
-        // When curTerm == term, good here, do nothing
-      }
-  }
-  def follower: Receive = {
-    case AppendEntries(term, _, _, _, _, _) =>
-      electionTimer.restart()
-      if (curTerm > term) {
-        sender ! AppendEntriesResult(curTerm, success = false)
-      } else {
-        curTerm = term
         sender ! AppendEntriesResult(curTerm, success = true)
+        become(follower)
       }
-    case RequestVote(term, cand, lastIndex, lastTerm) =>
+    // Irrelevant messages
+    case others: RPCMessage => new IrrelevantMessageException(others, sender)
+  }
+
+  def leader: Receive = {
+    case AppendEntriesResult(term, true) =>
       if (curTerm > term) {
-        sender ! RequestVoteResult(curTerm, voteGranted = false)
-      } else { // when curTerm <= term
-        curTerm = term
-        if (votedFor.isEmpty) {
-          votedFor = Some(cand)
-          sender ! RequestVoteResult(curTerm, voteGranted = true)
-          electionTimer.restart()
-        } else {
-          sender ! RequestVoteResult(curTerm, voteGranted = false)
-        }
+        warn(s"Leader received obsolete AppendEntriesResult with term $term")
+      } else if (curTerm < term){
+        become(follower)
+      } else { // curTerm == term
+        // TODO: process log
       }
+    // Irrelevant messages
+    case others: RPCMessage => new IrrelevantMessageException(others, sender)
   }
-  def dispatchHeartBeat(): Unit = {
-    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
+  
+  // Membership view initialization
+  override def receive: Receive = {
+    case init: Join =>
+      members ++= init.servers
+      become(follower)
   }
+ 
   override def preStart(): Unit = {
     if (!members.contains(self)) {
       members += self
@@ -134,6 +160,4 @@ class Server(val id: Int,
     electionTimer.stop()
   }
 
-  // Default to follower
-  override def receive: Receive = follower
 }
