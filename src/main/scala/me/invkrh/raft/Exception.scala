@@ -1,7 +1,7 @@
-package me.invkrh.raft.util
+package me.invkrh.raft
 
 import akka.actor.ActorRef
-import me.invkrh.raft.RPCMessage.Message
+import me.invkrh.raft.Message.RPCMessage
 
 object Exception {
 
@@ -9,7 +9,7 @@ object Exception {
 
   class IrrelevantMessageException private (errorMsg: String)
       extends RaftException(errorMsg: String) {
-    def this(rpcMessage: Message, sender: ActorRef) =
+    def this(rpcMessage: RPCMessage, sender: ActorRef) =
       this(s"Irrelevant message [ $rpcMessage ] received from ${sender.path}")
   }
 
