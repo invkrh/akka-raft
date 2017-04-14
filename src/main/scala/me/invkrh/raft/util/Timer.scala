@@ -8,7 +8,7 @@ import scala.util.Random
 import akka.actor.{Cancellable, Scheduler}
 
 trait Timer {
-  var cancellable: Cancellable
+  var cancellable: Cancellable = _
   def start(): Unit
   def restart(): Unit = {
     stop()
@@ -22,9 +22,8 @@ trait Timer {
 }
 
 class FixedTimer(durationInMills: Int, handler: => Unit)(implicit scheduler: Scheduler)
-  extends Timer {
-  private  val duration                 = durationInMills milliseconds
-  override var cancellable: Cancellable = _
+    extends Timer {
+  private val duration = durationInMills milliseconds
   def start(): Unit = {
     cancellable = scheduler.scheduleOnce(duration)(handler)
   }
@@ -32,11 +31,18 @@ class FixedTimer(durationInMills: Int, handler: => Unit)(implicit scheduler: Sch
 
 class RandomizedTimer(minMills: Int, maxMills: Int, handler: => Unit)(
   implicit scheduler: Scheduler)
-  extends Timer {
-  override var cancellable: Cancellable = _
+    extends Timer {
   def start(): Unit = {
     val rd = minMills + Random.nextInt(maxMills - minMills)
     cancellable = scheduler.scheduleOnce(rd milliseconds)(handler)
   }
-  
+}
+
+class PeriodicTimer(durationInMills: Int, handler: => Unit)(
+  implicit scheduler: Scheduler)
+    extends Timer {
+  private val duration = durationInMills milliseconds
+  def start(): Unit = {
+    cancellable = scheduler.schedule(Duration.Zero, duration)(handler)
+  }
 }
