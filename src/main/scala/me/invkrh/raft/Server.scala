@@ -34,7 +34,6 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
 
   val members: mutable.Set[ActorRef] = mutable.Set()
 
-  // TODO: Add member list function
   val log: ArrayBuffer[Entry] = new ArrayBuffer[Entry]()
   var curTerm = 0
   var votedFor: Option[Int] = None
