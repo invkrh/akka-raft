@@ -15,7 +15,7 @@ trait Timer {
     start()
   }
   def stop(): Unit = {
-    if (cancellable != null) {
+    if (cancellable != null && !cancellable.isCancelled) {
       cancellable.cancel()
     }
   }
