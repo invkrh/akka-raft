@@ -1,5 +1,9 @@
 package me.invkrh.raft
 
+import scala.concurrent.ExecutionContext.Implicits.global
+
+import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
@@ -20,15 +24,16 @@ class ServerTest
     TestKit.shutdownActorSystem(system)
   }
 
-  override def afterEach(): Unit = {
-  }
+  override def afterEach(): Unit = {}
 
   trait ProbeAction
   case class Exp(message: RPCMessage) extends ProbeAction // expect message
   case class Tel(message: RPCMessage) extends ProbeAction // tell message
   case class Rep(message: RPCMessage) extends ProbeAction // reply message for ask pattern
-  case class MajorRep(message: RPCMessage, otherMsg: Option[RPCMessage] = None) extends ProbeAction // majority of the probes reply
-  case class MinorRep(message: RPCMessage, otherMsg: Option[RPCMessage] = None) extends ProbeAction // minority of the probes reply
+  // majority of the probes reply
+  case class MajorRep(message: RPCMessage, otherMsg: Option[RPCMessage] = None) extends ProbeAction
+  // minority of the probes reply
+  case class MinorRep(message: RPCMessage, otherMsg: Option[RPCMessage] = None) extends ProbeAction
 
   trait EndpointChecker {
     protected def clusterSetup(server: ActorRef, probes: Array[TestProbe]): Unit
@@ -78,19 +83,19 @@ class ServerTest
             case None =>
           }
       }
-      
+
       probes foreach (_.ref ! PoisonPill)
 
       /**
        * Both stop and PoisonPill will terminate the actor and stop the message queue.
-       * They will cause the actor to cease processing messages, send a stop call to all its children,
-       * wait for them to terminate, then call its postStop hook.
+       * They will cause the actor to cease processing messages, send a stop call to all
+       * its children, wait for them to terminate, then call its postStop hook.
        * All further messages are sent to the dead letters mailbox.
        *
        * The difference is in which messages get processed before this sequence starts.
        * In the case of the `stop` call, the message currently being processed is completed first,
-       * with all others discarded. When sending a PoisonPill, this is simply another message in the queue,
-       * so the sequence will start when the PoisonPill is received.
+       * with all others discarded. When sending a PoisonPill, this is simply another message
+       * in the queue, so the sequence will start when the PoisonPill is received.
        * All messages that are ahead of it in the queue will be processed first.
        */
       system.stop(server)
@@ -120,6 +125,7 @@ class ServerTest
   }
 
   // TODO: Add integration test
+  // TODO: Test time assertion
 
   /////////////////////////////////////////////////
   //  Leader Election
@@ -181,9 +187,39 @@ class ServerTest
 
   it should "launch election after election timeout elapsed" in {
     new FollowerEndPointChecker(
-      Exp(RequestVote(1, 0, 0, 0)),
-      Rep(RequestVoteResult(1, voteGranted = true))
+      Exp(RequestVote(1, 0, 0, 0))
     ).run()
+  }
+
+  it should "reset election timeout if AppendEntries msg is received" in {
+    def heartbeatCheck(electionTimeoutInMS: Int, heartbeatIntervalInMS: Int, heartbeat: Int) = {
+      val minDuration = heartbeatIntervalInMS * heartbeat + electionTimeoutInMS
+      val maxDuration = minDuration * 2
+      val server = system.actorOf(Server.props(0, electionTimeoutInMS, heartbeatIntervalInMS))
+      server ! Join(self)
+      info(s"===> Execution between $minDuration and $maxDuration ms")
+      within(minDuration milliseconds, maxDuration milliseconds) {
+        Future {
+          for (i <- 0 until heartbeat) {
+            Thread.sleep(heartbeatIntervalInMS)
+            server ! AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)
+            info(s"heart beat $i is send")
+          }
+        }
+        timer("Waiting for RequestVote") {
+          fishForMessage(remaining, "election should have been launched") {
+            case RequestVote(1, 0, 0, 0) => true
+            case AppendEntriesResult(0, true) =>
+              info("heartbeat received")
+              false
+            case _ => false
+          }
+        }
+      }
+      server ! PoisonPill
+    }
+    heartbeatCheck(200, 100, 6)
+    heartbeatCheck(500, 300, 2)
   }
 
   "Candidate" should "become leader when received messages of majority" in {
@@ -201,14 +237,16 @@ class ServerTest
     ).run(5)
   }
 
-  it should "become follower when the received term in RequestVoteResult is larger than current term" in {
+  it should "become follower when the received term in RequestVoteResult is larger than " +
+    "current term" in {
     new CandidateEndPointChecker(
       Rep(RequestVoteResult(2, voteGranted = true)),
       Exp(RequestVote(3, 0, 0, 0))
     ).run(5)
   }
 
-  it should "become follower when received term in AppendEntriesResult is larger than current term" in {
+  it should "become follower when received term in AppendEntriesResult is larger than " +
+    "current term" in {
     new CandidateEndPointChecker(
       Tel(AppendEntries(2, 0, 0, 0, Seq[Entry](), 0)),
       Exp(AppendEntriesResult(2, success = true)),
@@ -227,7 +265,8 @@ class ServerTest
     ).run(5)
   }
 
-  it should "become follower if the received term of AppendEntriesResult is larger than current term" in {
+  it should "become follower if the received term of AppendEntriesResult is larger than " +
+    "current term" in {
     new LeaderEndPointChecker(
       Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
       Rep(AppendEntriesResult(2, success = true)),
