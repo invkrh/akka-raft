@@ -43,7 +43,7 @@ class ServerTest
                                           electTimeout: Int,
                                           hbInterval: Int,
                                           probeNum: Int): (ActorRef, Array[TestProbe]) = {
-      val probes = Array.tabulate(probeNum)(_ => TestProbe())
+      val probes = Array.tabulate(probeNum)(_ => TestProbe("follower"))
       val members = probes.map(_.ref)
       val server = system.actorOf(Server.props(id, electTimeout, hbInterval))
       server ! Join(members: _*)
@@ -119,7 +119,7 @@ class ServerTest
     override def clusterSetup(server: ActorRef, probes: Array[TestProbe]): Unit = {
       probes foreach { p =>
         p expectMsg RequestVote(1, 0, 0, 0)
-        p.reply(RequestVoteResult(1, voteGranted = true))
+        p.reply(RequestVoteResult(1, success = true))
       }
     }
   }
@@ -161,27 +161,27 @@ class ServerTest
   it should "reject RequestVote when the term of the message is smaller than his own" in {
     new FollowerEndPointChecker(
       Tel(RequestVote(-1, 0, 0, 0)),
-      Exp(RequestVoteResult(0, voteGranted = false))
+      Exp(RequestVoteResult(0, success = false))
     ).run()
   }
 
   it should "reply RequestVote with (at least )larger term which is received with the message" in {
     new FollowerEndPointChecker(
       Tel(RequestVote(0, 0, 0, 0)),
-      Exp(RequestVoteResult(0, voteGranted = true))
+      Exp(RequestVoteResult(0, success = true))
     ).run()
     new FollowerEndPointChecker(
       Tel(RequestVote(1, 0, 0, 0)),
-      Exp(RequestVoteResult(1, voteGranted = true))
+      Exp(RequestVoteResult(1, success = true))
     ).run()
   }
 
   it should "reject RequestVote when it has already voted" in {
     new FollowerEndPointChecker(
       Tel(RequestVote(0, 0, 0, 0)),
-      Exp(RequestVoteResult(0, voteGranted = true)),
+      Exp(RequestVoteResult(0, success = true)),
       Rep(RequestVote(0, 1, 0, 0)),
-      Exp(RequestVoteResult(0, voteGranted = false))
+      Exp(RequestVoteResult(0, success = false))
     ).run()
   }
 
@@ -224,15 +224,15 @@ class ServerTest
 
   "Candidate" should "become leader when received messages of majority" in {
     new CandidateEndPointChecker(
-      MajorRep(RequestVoteResult(1, voteGranted = true)),
+      MajorRep(RequestVoteResult(1, success = true)),
       Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0))
     ).run(5)
   }
 
   it should "launch election of the next term when only minority granted" in {
     new CandidateEndPointChecker(
-      MinorRep(RequestVoteResult(1, voteGranted = true),
-               Some(RequestVoteResult(1, voteGranted = false))),
+      MinorRep(RequestVoteResult(1, success = true),
+               Some(RequestVoteResult(1, success = false))),
       Exp(RequestVote(2, 0, 0, 0))
     ).run(5)
   }
@@ -240,7 +240,7 @@ class ServerTest
   it should "become follower when the received term in RequestVoteResult is larger than " +
     "current term" in {
     new CandidateEndPointChecker(
-      Rep(RequestVoteResult(2, voteGranted = true)),
+      Rep(RequestVoteResult(2, success = true)),
       Exp(RequestVote(3, 0, 0, 0))
     ).run(5)
   }

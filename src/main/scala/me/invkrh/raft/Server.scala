@@ -11,36 +11,47 @@ import scala.util.{Failure, Success, Try}
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Scheduler}
 import akka.pattern.{after, ask}
 import akka.util.Timeout
-import me.invkrh.raft.Message._
-import me.invkrh.raft.util.{FixedTimer, IdentifyLogging, PeriodicTimer}
+import me.invkrh.raft.Message.{RPCResult, _}
+import me.invkrh.raft.util.{FixedTimer, IdentifyLogging, PeriodicTimer, RandomizedTimer, Timer}
 
 object Server {
-  def props(id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMillis: Int): Props = {
+  def props(id: Int,
+            electionTimeoutInMillis: Int,
+            heartBeatIntervalInMillis: Int,
+            withRandomness: Boolean = false): Props = {
     require(electionTimeoutInMillis > heartBeatIntervalInMillis)
-    Props(new Server(id, electionTimeoutInMillis, heartBeatIntervalInMillis))
+    Props(new Server(id, electionTimeoutInMillis, heartBeatIntervalInMillis, withRandomness))
   }
 }
 
-class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMillis: Int)
+class Server(val id: Int,
+             electionTimeoutInMillis: Int,
+             heartBeatIntervalInMillis: Int,
+             withRandomness: Boolean = false)
     extends Actor
     with ActorLogging
     with IdentifyLogging {
 
   import context._
   implicit val scheduler: Scheduler = context.system.scheduler
-  
+
   type TryRes[R] = (ActorRef, Try[R])
   type SucRes[R] = (ActorRef, R)
   type FalRes = (ActorRef, Throwable)
 
-  val electionTimer = new FixedTimer(electionTimeoutInMillis, startElection())
-  //TODO: Think of RandomizedTimer (polymophism)
+  val electionTimer: Timer = if (withRandomness) {
+    new RandomizedTimer(electionTimeoutInMillis, electionTimeoutInMillis * 2, startElection())
+  } else {
+    new FixedTimer(electionTimeoutInMillis, startElection())
+  }
+
   val heartBeatTimer = new PeriodicTimer(heartBeatIntervalInMillis, issueHeartbeat())
 
   val members: mutable.Set[ActorRef] = mutable.Set()
 
   val logs: ArrayBuffer[Entry] = new ArrayBuffer[Entry]()
   var curTerm = 0
+  var curState: State.Value = State.Follower
   var votedFor: Option[Int] = None
 
   /**
@@ -61,16 +72,14 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
     }
   }
 
-
-  def distributeRPC[R <: RPCMessage : ClassTag](msg: RPCMessage, retries: Int)(
-    resultsHandler: (List[SucRes[R]], List[FalRes]) => Unit): Unit = {
+  def distributeRPC(msg: RPCMessage, retries: Int = 2): Unit = {
     implicit val timeout = Timeout(heartBeatIntervalInMillis / retries milliseconds)
     Future
       .sequence {
         (for {
           follower <- members.toSeq if follower != self
         } yield {
-          retry((follower ? msg).mapTo[R],
+          retry((follower ? msg).mapTo[RPCResult],
                 Duration.Zero,
                 retries,
                 s"Can not reach ${follower.path}, retrying ...")
@@ -79,92 +88,69 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
             .map(resp => (follower, resp))
         }).seq
       }
-      .onSuccess {
-        case results =>
-          val (suc, fal) = results.foldLeft(Nil: List[SucRes[R]], Nil: List[FalRes]) {
-            case ((replyMsgs, exs), (from, res)) =>
-              res match {
-                case Success(reply) => ((from, reply) :: replyMsgs, exs)
-                case Failure(e) => (replyMsgs, (from, e) :: exs)
-              }
-          }
-          resultsHandler(suc, fal)
+      /** Warning
+       * When using future callbacks, such as onComplete, onSuccess, and onFailure, inside actors you
+       * need to carefully avoid closing over the containing actor’s reference, i.e. do not call
+       * methods or access mutable state on the enclosing actor from within the callback. This would
+       * break the actor encapsulation and may introduce synchronization bugs and race conditions
+       * because the callback will be scheduled concurrently to the enclosing actor. Unfortunately
+       * there is not yet a way to detect these illegal accesses at compile time.
+       */
+      .foreach { res =>
+        self ! IO(msg, res)
       }
   }
 
-  def processRequestVoteResult(successes: List[SucRes[RequestVoteResult]],
-                               failures: List[FalRes]): Unit = {
-    var newLeaderTerm = 0
-    var grantedVotes = 1 // candidate votes for himself
-    successes foreach {
-      case (follower, RequestVoteResult(term, granted)) =>
-        if (!granted) {
-          warn(s"RequestVote to ${follower.path} with term $term is rejected")
-        } else {
-          if (curTerm < term) {
-            info(s"New leader is detected by ${follower.path} with term $term")
-            newLeaderTerm = Math.max(term, newLeaderTerm)
-          } else {
-            info(s"Receive vote granted from ${follower.path} with term $term")
-            grantedVotes += 1
-          }
+  def processReplies(results: Seq[(ActorRef, Try[RPCResult])])(majorityHandler: Int => Unit) = {
+    val requestName =
+      if (curState == State.Leader) AppendEntriesResult.getClass.getSimpleName.stripSuffix("$")
+      else if (curState == State.Candidate) RequestVoteResult.getClass.getSimpleName.stripSuffix("$")
+      else throw new Exception("Follower must not process request results")
+
+    val (maxTerm, validReplyCount) = results.foldLeft(curTerm, 1) {
+      case ((curMaxTerm, count), (follower, tryRes)) =>
+        tryRes match {
+          case Success(res) =>
+            if (res.term > curTerm) {
+              info(s"New leader is detected by ${follower.path} with term ${res.term}")
+              (Math.max(curMaxTerm, res.term), count)
+            } else if (res.term == curTerm) {
+              info(s"Receive $res from ${follower.path}")
+              if (res.success) {
+                (curMaxTerm, count + 1)
+              } else {
+                (curMaxTerm, count)
+              }
+            } else {
+              throw new Exception(
+                "The term of reply received must not be smaller than is current term")
+            }
+          case Failure(e) =>
+            warn(s"Can not get $requestName from ${follower.path} with error: " + e)
+            (curMaxTerm, count)
         }
     }
-    failures foreach {
-      case (follower, e) =>
-        warn(s"Can not get RequestVoteResult from ${follower.path} with error: " + e)
-    }
-    if (newLeaderTerm > 0) {
-      info(s"Switch from candidate to follower")
-      becomeFollower(newLeaderTerm)
+    if (maxTerm > curTerm) {
+      info(s"Switch from $curState to follower")
+      becomeFollower(maxTerm)
     } else {
-      if (grantedVotes > members.size / 2) {
-        info(
-          s"Election for term $curTerm is ended since majority is reached " +
-            s"($grantedVotes / ${members.size}), server $id becomes leader")
-        becomeLeader()
+      if (validReplyCount > members.size / 2) {
+        majorityHandler(validReplyCount)
       } else {
         info(
-          s"Only minority is reached ($grantedVotes / ${members.size}), " +
-            s"election for next term (${curTerm + 1}) will be launched")
+          s"Only minority is reached ($validReplyCount / ${members.size}), " +
+            s"a new round will be launched")
       }
     }
-    info("=== end of vote request epoch ===")
-  }
-
-  def processAppendEntriesResult(successes: List[SucRes[AppendEntriesResult]],
-                                 failures: List[FalRes]): Unit = {
-    var newLeaderTerm = 0
-    successes foreach {
-      case (follower, AppendEntriesResult(term, success)) =>
-        if (!success) {
-          warn(s"AppendEntries to ${follower.path} with term $term is rejected")
-        } else {
-          if (curTerm < term) {
-            info(s"New leader is detected by ${follower.path} with term $term")
-            newLeaderTerm = term
-          } else {
-            info(s"Receive heartbeat ack from ${follower.path} with term $term")
-          }
-        }
-    }
-    failures foreach {
-      case (follower, e) =>
-        warn(s"Can not get AppendEntriesResult from ${follower.path} with error: " + e)
-    }
-    if (newLeaderTerm > 0) {
-      info("Switch from leader to follower")
-      becomeFollower(newLeaderTerm)
-    }
-    info("=== end of heartbeat epoch ===")
+    info(s"=== end of processing $requestName ===")
   }
 
   def issueVoteRequest(): Unit = {
-    distributeRPC(RequestVote(curTerm, id, 0, 0), 5)(processRequestVoteResult)
+    distributeRPC(RequestVote(curTerm, id, 0, 0))
   }
 
   def issueHeartbeat(): Unit = {
-    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0), 5)(processAppendEntriesResult)
+    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
   }
 
   def startElection(): Unit = {
@@ -181,21 +167,22 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
         sender ! AppendEntriesResult(curTerm, success = false)
       } else {
         curTerm = term
+        votedFor = None
         electionTimer.restart() // only valid heartbeat refresh election timer
         sender ! AppendEntriesResult(curTerm, success = true)
       }
     // Candidate's request
     case RequestVote(term, cand, lastIndex, lastTerm) =>
       if (curTerm > term) {
-        sender ! RequestVoteResult(curTerm, voteGranted = false)
+        sender ! RequestVoteResult(curTerm, success = false)
       } else { // when curTerm <= term
         curTerm = term
         if (votedFor.isEmpty || votedFor.get == cand) {
           votedFor = Some(cand)
-          sender ! RequestVoteResult(curTerm, voteGranted = true)
+          sender ! RequestVoteResult(curTerm, success = true)
           electionTimer.restart()
         } else {
-          sender ! RequestVoteResult(curTerm, voteGranted = false)
+          sender ! RequestVoteResult(curTerm, success = false)
         }
       }
     // Irrelevant messages
@@ -205,6 +192,13 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
   }
 
   def candidate: Receive = {
+    case IO(_, replies) =>
+      processReplies(replies) { majCnt =>
+        info(
+          s"Election for term $curTerm is ended since majority is reached " +
+            s"($majCnt / ${members.size}), server $id becomes leader")
+        becomeLeader()
+      }
     case AppendEntries(term, leadId, prevLogIndex, prevLogTerm, entries, leaderCommit) =>
       if (curTerm > term) {
         // rejects RPC and continues in candidate state
@@ -222,6 +216,12 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
 
   def leader: Receive = {
     // TODO: Add admin endpoint and follower -> leader redirection
+    case IO(request, replies) =>
+      processReplies(replies) { majCnt =>
+        info(
+          s"Election for term $curTerm is ended since majority is reached " +
+            s"($majCnt / ${members.size}), committing logs")
+      }
     // Irrelevant messages
     case others: RPCMessage =>
       warn(s"Irrelevant message [$others] received from ${sender().path}")
@@ -230,18 +230,21 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
 
   def becomeFollower(newTerm: Int): Unit = {
     curTerm = newTerm
+    curState = State.Follower
     become(follower)
     heartBeatTimer.stop()
     electionTimer.restart()
   }
 
   def becomeCandidate(): Unit = {
+    curState = State.Candidate
     become(candidate)
     issueVoteRequest()
     electionTimer.restart()
   }
 
   def becomeLeader(): Unit = {
+    curState = State.Leader
     become(leader)
     electionTimer.stop()
     heartBeatTimer.restart()
@@ -252,9 +255,7 @@ class Server(val id: Int, electionTimeoutInMillis: Int, heartBeatIntervalInMilli
     case init: Join =>
       members ++= init.servers
       becomeFollower(curTerm)
-      info(
-        s"Start as follower, initial term is $curTerm " +
-          s"with election timeout $electionTimeoutInMillis ms")
+      info(s"Start as follower, initial term is $curTerm ")
   }
 
   override def preStart(): Unit = {

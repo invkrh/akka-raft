@@ -1,5 +1,7 @@
 package me.invkrh.raft
 
+import scala.util.Try
+
 import akka.actor.ActorRef
 
 object Message {
@@ -10,6 +12,10 @@ object Message {
   // Raft message
   trait RPCMessage {
     def term: Int
+  }
+  
+  trait RPCResult extends RPCMessage{
+    def success: Boolean
   }
   
   case class Command(key: String, value: Int)
@@ -25,6 +31,8 @@ object Message {
   case class RequestVote(term: Int, candidateId: Int, lastLogIndex: Int, lastLogTerm: Int)
       extends RPCMessage
 
-  case class AppendEntriesResult(term: Int, success: Boolean) extends RPCMessage
-  case class RequestVoteResult(term: Int, voteGranted: Boolean) extends RPCMessage
+  case class AppendEntriesResult(term: Int, success: Boolean) extends RPCResult
+  case class RequestVoteResult(term: Int, success: Boolean) extends RPCResult
+  
+  case class IO(request: RPCMessage, replies: Seq[(ActorRef, Try[RPCResult])])
 }
