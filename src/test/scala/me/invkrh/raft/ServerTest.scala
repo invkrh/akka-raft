@@ -1,16 +1,16 @@
 package me.invkrh.raft
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
+import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
-import com.typesafe.config.ConfigFactory
 import me.invkrh.raft.RaftMessage._
 import me.invkrh.raft.util.Metric
-import org.scalatest.{Entry => _, _}
+import org.scalatest._
 
 class ServerTest
     extends TestKit(ActorSystem("SeverSpec"))
@@ -25,6 +25,15 @@ class ServerTest
   }
 
   override def afterEach(): Unit = {}
+  
+  def stopServer(serverRef: ActorRef): Unit = {
+    try {
+      val stopped: Future[Boolean] = gracefulStop(serverRef, 5 seconds)
+      Await.result(stopped, 6 seconds)
+    } catch {
+      case e: AskTimeoutException ⇒ throw e
+    }
+  }
 
   trait ProbeAction
   case class ExpNoMsg() extends ProbeAction // expect message
@@ -105,7 +114,7 @@ class ServerTest
        * in the queue, so the sequence will start when the PoisonPill is received.
        * All messages that are ahead of it in the queue will be processed first.
        */
-      system.stop(server)
+      stopServer(server)
     }
   }
 
@@ -152,7 +161,7 @@ class ServerTest
 
   "Follower" should "return current term and success flag when AppendEntries is received" in {
     new FollowerEndPointChecker(
-      Tel(AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)),
+      Tel(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)),
       Exp(AppendEntriesResult(0, success = true))
     ).run()
   }
@@ -160,7 +169,7 @@ class ServerTest
   it should "resend commands received when leader was not elected" in {
     new FollowerEndPointChecker(
       Tel(Command("x", 1)),
-      Tel(AppendEntries(0, 1, 0, 0, Seq[Entry](), 0)),
+      Tel(AppendEntries(0, 1, 0, 0, Seq[LogEntry](), 0)),
       Exp(AppendEntriesResult(0, success = true)),
       Exp(Command("x", 1))
     ).run()
@@ -168,14 +177,14 @@ class ServerTest
 
   it should "reject AppendEntries when the term of the message is smaller than his own" in {
     new FollowerEndPointChecker(
-      Tel(AppendEntries(-1, 0, 0, 0, Seq[Entry](), 0)),
+      Tel(AppendEntries(-1, 0, 0, 0, Seq[LogEntry](), 0)),
       Exp(AppendEntriesResult(0, success = false))
     ).run()
   }
 
   it should "reply AppendEntries with larger term which is received with the message" in {
     new FollowerEndPointChecker(
-      Tel(AppendEntries(2, 0, 0, 0, Seq[Entry](), 0)),
+      Tel(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
       Exp(AppendEntriesResult(2, success = true))
     ).run()
   }
@@ -215,10 +224,9 @@ class ServerTest
 
   it should "reset election timeout if AppendEntries msg is received" in {
     def heartbeatCheck(electionTime: FiniteDuration, tickTime: FiniteDuration, heartbeat: Int) = {
-      import scala.util.Random
       val minDuration = tickTime * heartbeat + electionTime
       val maxDuration = minDuration * 2
-      val serverId = Random.nextInt
+      val serverId = 0
       val server =
         Server.run(serverId, electionTime, electionTime, tickTime, Map(1 -> self.path.toString))
       info(s"===> Execution between $minDuration and $maxDuration ms")
@@ -226,13 +234,13 @@ class ServerTest
         Future {
           for (i <- 0 until heartbeat) {
             Thread.sleep(tickTime.toMillis)
-            server ! AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)
+            server ! AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)
             info(s"heart beat $i is send")
           }
         }
         timer("Waiting for RequestVote") {
           fishForMessage(remaining, "election should have been launched") {
-            case RequestVote(1, serverId, 0, 0) => true
+            case RequestVote(1, id, 0, 0) if id == serverId => true
             case AppendEntriesResult(0, true) =>
               info("heartbeat received")
               false
@@ -240,7 +248,7 @@ class ServerTest
           }
         }
       }
-      system.stop(server)
+      stopServer(server)
     }
     heartbeatCheck(200 millis, 100 millis, 6)
     heartbeatCheck(500 millis, 300 millis, 2)
@@ -249,7 +257,7 @@ class ServerTest
   "Candidate" should "become leader when received messages of majority" in {
     new CandidateEndPointChecker(
       MajorRep(RequestVoteResult(1, success = true)),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0))
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0))
     ).run(5)
   }
 
@@ -271,7 +279,7 @@ class ServerTest
   it should "become follower when received term in AppendEntriesResult is larger than " +
     "current term" in {
     new CandidateEndPointChecker(
-      Tel(AppendEntries(2, 0, 0, 0, Seq[Entry](), 0)),
+      Tel(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
       Exp(AppendEntriesResult(2, success = true)),
       Exp(RequestVote(3, 0, 0, 0))
     ).run(5)
@@ -279,11 +287,11 @@ class ServerTest
 
   "Leader" should "send heartbeat to every follower within heartbeat interval" in {
     new LeaderEndPointChecker(
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       Rep(AppendEntriesResult(1, success = true)),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       Rep(AppendEntriesResult(1, success = true)),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       Rep(AppendEntriesResult(1, success = true))
     ).run(5)
   }
@@ -291,7 +299,7 @@ class ServerTest
   it should "become follower if the received term of AppendEntriesResult is larger than " +
     "current term" in {
     new LeaderEndPointChecker(
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       Rep(AppendEntriesResult(2, success = true)),
       Exp(RequestVote(3, 0, 0, 0))
     ).run(5)
@@ -299,24 +307,24 @@ class ServerTest
 
   it should "continue to distribute heartbeat when AppendEntry requests are rejected" in {
     new LeaderEndPointChecker(
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       MinorRep(AppendEntriesResult(1, success = false),
                Some(AppendEntriesResult(1, success = true))),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       MinorRep(AppendEntriesResult(1, success = true),
                Some(AppendEntriesResult(1, success = false))),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       Rep(AppendEntriesResult(1, success = true))
     ).run(5)
   }
 
   it should "continue to distribute heartbeat when some heartbeat acks are not received" in {
     new LeaderEndPointChecker(
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       MinorRep(AppendEntriesResult(1, success = false)),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       MajorRep(AppendEntriesResult(1, success = true)),
-      Exp(AppendEntries(1, 0, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
       Rep(AppendEntriesResult(1, success = true))
     ).run(5)
   }
