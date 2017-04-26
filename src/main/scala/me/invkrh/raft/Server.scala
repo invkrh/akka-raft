@@ -73,9 +73,9 @@ class Server(val id: Int,
   val rpcMessageQueue: ArrayBuffer[(ActorRef, RPCMessage)] = new ArrayBuffer()
   val clientMessageQueue: ArrayBuffer[(ActorRef, ClientMessage)] = new ArrayBuffer()
 
-  val electionTimer: Timer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
-  val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
-  val logs: ArrayBuffer[Entry] = new ArrayBuffer[Entry]()
+  val electionTimer: Timer        = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
+  val heartBeatTimer              = new PeriodicTimer(tickTime, Tick)
+  val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
 
   memberDict foreach {
     case (serverId, path) =>

@@ -28,7 +28,7 @@ object RaftMessage {
                            leadId: Int,
                            prevLogIndex: Int,
                            prevLogTerm: Int,
-                           entries: Seq[Entry],
+                           entries: Seq[LogEntry],
                            leaderCommit: Int)
       extends RPCMessage
   case class RequestVote(term: Int, candidateId: Int, lastLogIndex: Int, lastLogTerm: Int)
@@ -43,6 +43,6 @@ object RaftMessage {
 
   
   
-  case class Entry(term: Int, command: Command)
+  case class LogEntry(term: Int, command: Command)
   case class CallBack(request: RPCMessage, replies: Seq[(ActorRef, Try[RPCResult])])
 }
