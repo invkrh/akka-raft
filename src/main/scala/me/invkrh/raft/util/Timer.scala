@@ -5,7 +5,8 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Random
 
-import akka.actor.{Cancellable, Scheduler}
+import akka.actor.{ActorRef, Cancellable, Scheduler}
+import me.invkrh.raft.RaftMessage.Event
 
 trait Timer {
   var cancellable: Cancellable = _
@@ -21,28 +22,28 @@ trait Timer {
   }
 }
 
-class FixedTimer(durationInMills: Int, handler: => Unit)(implicit scheduler: Scheduler)
+class FixedTimer(duration: FiniteDuration, event: Event)(implicit scheduler: Scheduler,
+                                                         target: ActorRef)
     extends Timer {
-  private val duration = durationInMills milliseconds
   def start(): Unit = {
-    cancellable = scheduler.scheduleOnce(duration)(handler)
+    cancellable = scheduler.scheduleOnce(duration, target, event)
   }
 }
 
-class RandomizedTimer(minMills: Int, maxMills: Int, handler: => Unit)(
-  implicit scheduler: Scheduler)
+class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: Event)(
+  implicit scheduler: Scheduler,
+  target: ActorRef)
     extends Timer {
   def start(): Unit = {
-    val rd = minMills + Random.nextInt(maxMills - minMills)
-    cancellable = scheduler.scheduleOnce(rd milliseconds)(handler)
+    val rd = min.toMillis + Random.nextInt((max.toMillis - min.toMillis + 1).toInt)
+    cancellable = scheduler.scheduleOnce(rd milliseconds, target, event)
   }
 }
 
-class PeriodicTimer(durationInMills: Int, handler: => Unit)(
-  implicit scheduler: Scheduler)
+class PeriodicTimer(duration: FiniteDuration, event: Event)(implicit scheduler: Scheduler,
+                                                            target: ActorRef)
     extends Timer {
-  private val duration = durationInMills milliseconds
   def start(): Unit = {
-    cancellable = scheduler.schedule(Duration.Zero, duration)(handler)
+    cancellable = scheduler.schedule(Duration.Zero, duration, target, event)
   }
 }

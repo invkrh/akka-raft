@@ -1,14 +1,14 @@
 package me.invkrh.raft
 
 import scala.concurrent.ExecutionContext.Implicits.global
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
-import me.invkrh.raft.Message._
+import com.typesafe.config.ConfigFactory
+import me.invkrh.raft.RaftMessage._
 import me.invkrh.raft.util.Metric
 import org.scalatest.{Entry => _, _}
 
@@ -27,32 +27,39 @@ class ServerTest
   override def afterEach(): Unit = {}
 
   trait ProbeAction
-  case class Exp(message: RPCMessage) extends ProbeAction // expect message
-  case class Tel(message: RPCMessage) extends ProbeAction // tell message
-  case class Rep(message: RPCMessage) extends ProbeAction // reply message for ask pattern
+  case class ExpNoMsg() extends ProbeAction // expect message
+  case class Exp(message: Message) extends ProbeAction // expect message
+  case class Tel(message: Message) extends ProbeAction // tell message
+  case class Rep(message: Message) extends ProbeAction // reply message for ask pattern
   // majority of the probes reply
-  case class MajorRep(message: RPCMessage, otherMsg: Option[RPCMessage] = None) extends ProbeAction
+  case class MajorRep(message: Message, otherMsg: Option[Message] = None) extends ProbeAction
   // minority of the probes reply
-  case class MinorRep(message: RPCMessage, otherMsg: Option[RPCMessage] = None) extends ProbeAction
+  case class MinorRep(message: Message, otherMsg: Option[Message] = None) extends ProbeAction
 
   trait EndpointChecker {
     protected def clusterSetup(server: ActorRef, probes: Array[TestProbe]): Unit
     protected def exchanges: List[ProbeAction]
 
     private def createServerRefWithProbes(id: Int,
-                                          electTimeout: Int,
-                                          hbInterval: Int,
+                                          electTimeout: FiniteDuration,
+                                          hbInterval: FiniteDuration,
                                           probeNum: Int): (ActorRef, Array[TestProbe]) = {
-      val probes = Array.tabulate(probeNum)(_ => TestProbe("follower"))
-      val members = probes.map(_.ref)
-      val server = system.actorOf(Server.props(id, electTimeout, hbInterval))
-      server ! Join(members: _*)
+      val probes = Array.fill(probeNum)(TestProbe("follower"))
+      val memberDict = probes.zipWithIndex.map {
+        case (probe, index) =>
+          /** + 1 is crucial, otherwise the first probe with the same id as the server 0 will not
+           * receive any message, which makes expectMsg test failed
+           */
+          (index + 1, probe.ref.path.toString)
+      }.toMap
+      val server = Server.run(id, electTimeout, electTimeout, hbInterval, memberDict)
       (server, probes)
     }
     def run(probeNum: Int = 1): Unit = {
-      val (server, probes) = createServerRefWithProbes(0, 150, 100, probeNum)
+      val (server, probes) = createServerRefWithProbes(0, 150 millis, 100 millis, probeNum)
       clusterSetup(server, probes)
       exchanges foreach {
+        case ExpNoMsg() => probes foreach (_ expectNoMsg)
         case Exp(msg) =>
           probes foreach (_ expectMsg msg)
         case Tel(msg) =>
@@ -124,23 +131,38 @@ class ServerTest
     }
   }
 
-  // TODO: Add integration test
   // TODO: Test time assertion
-
   /////////////////////////////////////////////////
   //  Leader Election
   /////////////////////////////////////////////////
 
-  "Server" should "do nothing when no members are added" in {
-    val server = system.actorOf(Server.props(0, 150, 100))
-    expectNoMsg()
-    server ! PoisonPill
+  "Server" should "throw exception when member dict is empty" in {
+    intercept[IllegalArgumentException] {
+      val server = system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, Map()))
+      server ! PoisonPill
+    }
+  }
+
+  "it" should "throw exception when election time is shorter than heartbeat interval" in {
+    intercept[IllegalArgumentException] {
+      val server = system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis, Map()))
+      server ! PoisonPill
+    }
   }
 
   "Follower" should "return current term and success flag when AppendEntries is received" in {
     new FollowerEndPointChecker(
       Tel(AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)),
       Exp(AppendEntriesResult(0, success = true))
+    ).run()
+  }
+
+  it should "resend commands received when leader was not elected" in {
+    new FollowerEndPointChecker(
+      Tel(Command("x", 1)),
+      Tel(AppendEntries(0, 1, 0, 0, Seq[Entry](), 0)),
+      Exp(AppendEntriesResult(0, success = true)),
+      Exp(Command("x", 1))
     ).run()
   }
 
@@ -192,23 +214,25 @@ class ServerTest
   }
 
   it should "reset election timeout if AppendEntries msg is received" in {
-    def heartbeatCheck(electionTimeoutInMS: Int, heartbeatIntervalInMS: Int, heartbeat: Int) = {
-      val minDuration = heartbeatIntervalInMS * heartbeat + electionTimeoutInMS
+    def heartbeatCheck(electionTime: FiniteDuration, tickTime: FiniteDuration, heartbeat: Int) = {
+      import scala.util.Random
+      val minDuration = tickTime * heartbeat + electionTime
       val maxDuration = minDuration * 2
-      val server = system.actorOf(Server.props(0, electionTimeoutInMS, heartbeatIntervalInMS))
-      server ! Join(self)
+      val serverId = Random.nextInt
+      val server =
+        Server.run(serverId, electionTime, electionTime, tickTime, Map(1 -> self.path.toString))
       info(s"===> Execution between $minDuration and $maxDuration ms")
-      within(minDuration milliseconds, maxDuration milliseconds) {
+      within(minDuration, maxDuration) {
         Future {
           for (i <- 0 until heartbeat) {
-            Thread.sleep(heartbeatIntervalInMS)
+            Thread.sleep(tickTime.toMillis)
             server ! AppendEntries(0, 0, 0, 0, Seq[Entry](), 0)
             info(s"heart beat $i is send")
           }
         }
         timer("Waiting for RequestVote") {
           fishForMessage(remaining, "election should have been launched") {
-            case RequestVote(1, 0, 0, 0) => true
+            case RequestVote(1, serverId, 0, 0) => true
             case AppendEntriesResult(0, true) =>
               info("heartbeat received")
               false
@@ -216,10 +240,10 @@ class ServerTest
           }
         }
       }
-      server ! PoisonPill
+      system.stop(server)
     }
-    heartbeatCheck(200, 100, 6)
-    heartbeatCheck(500, 300, 2)
+    heartbeatCheck(200 millis, 100 millis, 6)
+    heartbeatCheck(500 millis, 300 millis, 2)
   }
 
   "Candidate" should "become leader when received messages of majority" in {
@@ -231,8 +255,7 @@ class ServerTest
 
   it should "launch election of the next term when only minority granted" in {
     new CandidateEndPointChecker(
-      MinorRep(RequestVoteResult(1, success = true),
-               Some(RequestVoteResult(1, success = false))),
+      MinorRep(RequestVoteResult(1, success = true), Some(RequestVoteResult(1, success = false))),
       Exp(RequestVote(2, 0, 0, 0))
     ).run(5)
   }
