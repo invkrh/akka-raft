@@ -6,11 +6,22 @@ import akka.actor.ActorRef
 
 object Message {
   
-  // Admin message
-  case class Join(servers: ActorRef*)
+  // admin message
+  trait Event
+  case object Tick extends Event
+  case object StartElection extends Event
+  case class Resolved(serverId: Int, serverRef: ActorRef, total: Int) extends Event
   
-  // Raft message
-  trait RPCMessage {
+  trait Message
+  
+  // client message
+  trait ClientMessage extends Message
+  case class Command(key: String, value: Int) extends ClientMessage
+  case class CommandAccepted() extends ClientMessage
+  case class CommandRejected(info: String) extends ClientMessage
+  
+  // internal RPC message
+  trait RPCMessage extends Message {
     def term: Int
   }
   
@@ -18,7 +29,7 @@ object Message {
     def success: Boolean
   }
   
-  case class Command(key: String, value: Int)
+  
   case class Entry(term: Int, command: Command)
   
   case class AppendEntries(term: Int,
@@ -34,5 +45,5 @@ object Message {
   case class AppendEntriesResult(term: Int, success: Boolean) extends RPCResult
   case class RequestVoteResult(term: Int, success: Boolean) extends RPCResult
   
-  case class IO(request: RPCMessage, replies: Seq[(ActorRef, Try[RPCResult])])
+  case class CallBack(request: RPCMessage, replies: Seq[(ActorRef, Try[RPCResult])])
 }
