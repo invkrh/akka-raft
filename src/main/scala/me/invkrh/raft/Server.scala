@@ -1,9 +1,5 @@
 package me.invkrh.raft
 
-import java.io.File
-import java.net.URL
-
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -43,7 +39,7 @@ object Server {
       serverNamePrefix + id
     )
   }
-  
+
   def run(serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
     system.actorOf(props(serverConf), serverNamePrefix + serverConf.id)
   }
@@ -73,8 +69,8 @@ class Server(val id: Int,
   val rpcMessageQueue: ArrayBuffer[(ActorRef, RPCMessage)] = new ArrayBuffer()
   val clientMessageQueue: ArrayBuffer[(ActorRef, ClientMessage)] = new ArrayBuffer()
 
-  val electionTimer: Timer        = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
-  val heartBeatTimer              = new PeriodicTimer(tickTime, Tick)
+  val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
+  val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
   val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
 
   memberDict foreach {
@@ -83,7 +79,7 @@ class Server(val id: Int,
       val f = context
         .actorSelection(path)
         .resolveOne(timeout)
-        .map(ref => Resolved(serverId, ref, memberDict.size))
+        .map(ref => Resolved(serverId, ref))
       f pipeTo self
   }
 
@@ -93,20 +89,12 @@ class Server(val id: Int,
     info(s"Server $id stops and cancel all timer scheduled tasks")
 
     /**
-     * Note: if there are still some timer task when actor stopped (system stop),
-     * an error will be thrown. Need to stop all timer here.
+     * Avoid dead letter message
      */
     electionTimer.stop()
     heartBeatTimer.stop()
   }
 
-  /**
-   * Given an operation that produces a T, returns a Future containing the result of T,
-   * unless an exception is thrown, in which case the operation will be retried after _delay_ time,
-   * if there are more possible retries, which is configured through the _retries_ parameter.
-   * If the operation does not succeed and there is no retries left,
-   * the resulting Future will contain the last failure.
-   **/
   def retry[T](ft: Future[T],
                delay: FiniteDuration,
                retries: Int,
@@ -203,15 +191,15 @@ class Server(val id: Int,
     distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
   }
 
-  def processClientRequest(cmd: Command) = {
+  def processClientRequest(cmd: Command): Unit = {
     info("Client command received: " + cmd)
   }
 
   override def receive: Receive = {
-    case Resolved(serverId, ref, total) =>
+    case Resolved(serverId, ref) =>
       info(s"Find initial member with id=$serverId at ${ref.path}")
       members = members.updated(serverId, ref)
-      if (members.size == total) {
+      if (members.size == memberDict.size) {
         becomeFollower(curTerm)
       }
     case msg: RPCMessage =>
@@ -224,7 +212,8 @@ class Server(val id: Int,
     case cmd: ClientMessage =>
       curLeader match {
         case Some(leaderId) =>
-          val leaderRef = members.getOrElse(leaderId, throw new Exception("Unknown leader id"))
+          val leaderRef =
+            members.getOrElse(leaderId, throw new Exception("Unknown leader id: " + leaderId))
           leaderRef forward cmd
         case None =>
           info("Leader has not been elected, command cached")
