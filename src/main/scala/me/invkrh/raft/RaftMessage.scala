@@ -10,7 +10,7 @@ object RaftMessage {
   trait Event
   case object Tick extends Event
   case object StartElection extends Event
-  case class Resolved(serverId: Int, serverRef: ActorRef, total: Int) extends Event
+  case class Resolved(serverId: Int, serverRef: ActorRef) extends Event
 
   trait Message
 
