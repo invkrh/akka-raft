@@ -10,18 +10,17 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 import me.invkrh.raft.RaftMessage._
+import me.invkrh.raft.Exception._
 import me.invkrh.raft.util._
 
 object Server {
-  val serverNamePrefix = "svr"
   def props(id: Int,
             minElectionTime: FiniteDuration,
             maxElectionTime: FiniteDuration,
             tickTime: FiniteDuration,
             memberDict: Map[Int, String]): Props = {
-    require(minElectionTime > tickTime,
-            "Heartbeat interval should be smaller than election time out")
-    require(memberDict.nonEmpty, "Member should not be empty")
+    checkOrThrow(minElectionTime > tickTime, HeartbeatIntervalException())
+    checkOrThrow(memberDict.nonEmpty, EmptyInitMemberException())
     Props(new Server(id, minElectionTime, maxElectionTime, tickTime, memberDict))
   }
 
@@ -33,15 +32,16 @@ object Server {
           minElectionTime: FiniteDuration,
           maxElectionTime: FiniteDuration,
           tickTime: FiniteDuration,
-          memberDict: Map[Int, String])(implicit system: ActorSystem): ActorRef = {
+          memberDict: Map[Int, String],
+          name: String)(implicit system: ActorSystem): ActorRef = {
     system.actorOf(
       props(id, minElectionTime, maxElectionTime, tickTime, memberDict),
-      serverNamePrefix + id
+      name
     )
   }
 
   def run(serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
-    system.actorOf(props(serverConf), serverNamePrefix + serverConf.id)
+    system.actorOf(props(serverConf), "svr-" + serverConf.id)
   }
 }
 
@@ -66,13 +66,15 @@ class Server(val id: Int,
   var votedFor: Option[Int] = None
   var members: Map[Int, ActorRef] = Map()
 
-  val rpcMessageQueue: ArrayBuffer[(ActorRef, RPCMessage)] = new ArrayBuffer()
-  val clientMessageQueue: ArrayBuffer[(ActorRef, ClientMessage)] = new ArrayBuffer()
+  // TODO: Add buffer class (improve log and encapsulation, here maybe)
+  val rpcMessageCache: ArrayBuffer[(ActorRef, RPCMessage)] = new ArrayBuffer()
+  val clientMessageCache: ArrayBuffer[(ActorRef, ClientMessage)] = new ArrayBuffer()
 
   val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
   val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
   val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
 
+  // TODO: Member Management problem, member is added one by one
   memberDict foreach {
     case (serverId, path) =>
       val timeout = 5 seconds
@@ -80,6 +82,11 @@ class Server(val id: Int,
         .actorSelection(path)
         .resolveOne(timeout)
         .map(ref => Resolved(serverId, ref))
+        .recover {
+          case e =>
+            warn(s"Can not find server under path: $path")
+            throw e // TODO: use Status.Failure, need to return an exception which will be embraced in Status.Failure
+        }
       f pipeTo self
   }
 
@@ -106,7 +113,7 @@ class Server(val id: Int,
     }
   }
 
-  def distributeRPC(msg: RPCMessage, retries: Int = 2): Unit = {
+  def distributeRPC(msg: RPCMessage, retries: Int = 1): Unit = {
     implicit val timeout = Timeout(tickTime / retries)
     Future
       .sequence {
@@ -122,15 +129,9 @@ class Server(val id: Int,
             .map(resp => (follower, resp))
         }
       }
-      /** Warning
-       * When using future callbacks, such as onComplete, onSuccess, and onFailure, inside actors you
-       * need to carefully avoid closing over the containing actor’s reference, i.e. do not call
-       * methods or access mutable state on the enclosing actor from within the callback. This would
-       * break the actor encapsulation and may introduce synchronization bugs and race conditions
-       * because the callback will be scheduled concurrently to the enclosing actor. Unfortunately
-       * there is not yet a way to detect these illegal accesses at compile time.
-       */
-      .map(res => CallBack(msg, res)) pipeTo self
+      .map { res =>
+        CallBack(msg, res)
+      } pipeTo self
   }
 
   def processReplies(results: Seq[(ActorRef, Try[RPCResult])])(
@@ -146,7 +147,7 @@ class Server(val id: Int,
         tryRes match {
           case Success(res) =>
             if (res.term > curTerm) {
-              info(s"New leader is detected by ${follower.path} with term ${res.term}")
+              info(s"New leader is detected by receiving $res from ${follower.path}")
               (Math.max(curMaxTerm, res.term), count)
             } else if (res.term == curTerm) {
               info(s"Receive $res from ${follower.path}")
@@ -178,9 +179,14 @@ class Server(val id: Int,
     info(s"=== end of processing $requestName ===")
   }
 
-  def resendMessageBuffer[T <: Message](buffer: ArrayBuffer[(ActorRef, T)]): Unit = {
-    buffer foreach { case (src, msg) => self.tell(msg, src) }
-    buffer.clear
+  def flushMessageCache[T <: Message](buffer: ArrayBuffer[(ActorRef, T)]): Unit = {
+    if (buffer.isEmpty) {
+      info("Message buffer is empty, no flushing")
+    } else {
+      info(s"Flush messages in buffer with ${buffer.size} message in it")
+      buffer foreach { case (src, msg) => self.tell(msg, src) }
+      buffer.clear
+    }
   }
 
   def issueVoteRequest(): Unit = {
@@ -203,9 +209,9 @@ class Server(val id: Int,
         becomeFollower(curTerm)
       }
     case msg: RPCMessage =>
-      rpcMessageQueue.append((sender(), msg))
+      rpcMessageCache.append((sender(), msg))
     case msg: ClientMessage =>
-      clientMessageQueue.append((sender(), msg))
+      clientMessageCache.append((sender(), msg))
   }
 
   def follower: Receive = {
@@ -217,7 +223,7 @@ class Server(val id: Int,
           leaderRef forward cmd
         case None =>
           info("Leader has not been elected, command cached")
-          clientMessageQueue.append((sender(), cmd))
+          clientMessageCache.append((sender(), cmd))
       }
     // Timer Event
     case StartElection => becomeCandidate()
@@ -228,15 +234,12 @@ class Server(val id: Int,
       } else {
         curTerm = term
         votedFor = None
-
-        /**
-         * curLeader can not be the sender since this is an endpoint for ask pattern,
-         * so the sender is just a temp actor. Need to figure out leader from AppendEntries request
-         */
+        // curLeader can not be the sender since this is an endpoint for ask pattern,
+        // so the sender is just a temp actor. Need to figure out leader from AppendEntries request
         curLeader = Some(leadId) // maintain authority
-        resendMessageBuffer(clientMessageQueue)
-        electionTimer.restart() // only valid heartbeat refresh election timer
+        flushMessageCache(clientMessageCache)
         sender ! AppendEntriesResult(curTerm, success = true)
+        electionTimer.restart() // only valid heartbeat refresh election timer
       }
     // Candidate's request
     case RequestVote(term, cand, lastIndex, lastTerm) =>
@@ -258,10 +261,17 @@ class Server(val id: Int,
     // throw new IrrelevantMessageException(others, sender)
   }
 
-  // TODO: what if candidate receive client request
   def candidate: Receive = {
-    case CallBack(_, replies) =>
-      processReplies(replies) { majCnt =>
+    case cmd: ClientMessage =>
+      curLeader match {
+        case Some(_) =>
+          throw new Exception("Leader should be empty for candidate")
+        case None =>
+          info("Leader has not been elected, command cached")
+          clientMessageCache.append((sender(), cmd))
+      }
+    case CallBack(request: RequestVote, responses) =>
+      processReplies(responses) { majCnt =>
         info(
           s"Election for term $curTerm is ended since majority is reached " +
             s"($majCnt / ${members.size})")
@@ -276,7 +286,7 @@ class Server(val id: Int,
         sender ! AppendEntriesResult(curTerm, success = false)
       } else { // new leader detected
         sender ! AppendEntriesResult(term, success = true)
-        info("New leader detected, switch from candidate to follower")
+        info(s"New leader detected during election by receiving heartbeat with larger term $term")
         becomeFollower(term)
       }
     // Irrelevant messages
@@ -289,8 +299,8 @@ class Server(val id: Int,
     case cmd: Command =>
       processClientRequest(cmd)
       sender() ! CommandAccepted()
-    case CallBack(request, replies) =>
-      processReplies(replies) { majCnt =>
+    case CallBack(request: AppendEntries, responses) =>
+      processReplies(responses) { majCnt =>
         info(
           s"Heartbeat for term $curTerm is ended since majority is reached " +
             s"($majCnt / ${members.size}), committing logs")
@@ -304,32 +314,35 @@ class Server(val id: Int,
   }
 
   def becomeFollower(newTerm: Int): Unit = {
-    info(s"Switch from $curState to follower, current term is $newTerm")
+    val oldState = curState
     curTerm = newTerm
     curState = State.Follower
     become(follower)
+    info(s"Switch from $oldState to follower, current term is $curTerm")
     heartBeatTimer.stop()
-    resendMessageBuffer(rpcMessageQueue)
     electionTimer.restart()
+    flushMessageCache(rpcMessageCache)
   }
 
   def becomeCandidate(): Unit = {
-    info(s"Election for term $curTerm started, server $id becomes candidate")
     curState = State.Candidate
     curTerm = curTerm + 1
     votedFor = Some(id)
+    curLeader = None //TODO: Test
     become(candidate)
-    issueVoteRequest()
+    info(s"Election for term $curTerm started, server $id becomes candidate")
     electionTimer.restart()
+    issueVoteRequest()
   }
 
   def becomeLeader(): Unit = {
-    info(s"Server $id becomes leader")
     curState = State.Leader
     curLeader = Some(id)
     become(leader)
+    info(s"Server $id becomes leader")
     electionTimer.stop()
     heartBeatTimer.restart()
+    flushMessageCache(clientMessageCache)
   }
 
 }

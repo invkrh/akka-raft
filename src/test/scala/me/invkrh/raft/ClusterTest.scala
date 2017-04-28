@@ -29,11 +29,11 @@ class ClusterTest
   "Cluster" should "work well" in {
     val num = 5
     val memberDict =
-      List.tabulate(num)(i => i -> (s"akka://ClusterSpec/user/${Server.serverNamePrefix}" + i)).toMap
+      List.tabulate(num)(i => i -> s"akka://ClusterSpec/user/svr-$i").toMap
     val quorum = List
       .tabulate(num) { i =>
         val electTime = 150 + 50 * i millis
-        val ref = Server.run(i, electTime, electTime, 100 millis, memberDict)
+        val ref = Server.run(i, electTime, electTime, 100 millis, memberDict, s"svr-$i")
         i -> ref
       }
       .toMap

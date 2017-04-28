@@ -6,8 +6,9 @@ import scala.concurrent.{Await, Future}
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
+import me.invkrh.raft.Exception.{EmptyInitMemberException, HeartbeatIntervalException}
 import me.invkrh.raft.RaftMessage._
-import me.invkrh.raft.util.Metric
+import me.invkrh.raft.util.{Metric, UID}
 import org.scalatest._
 
 class ServerTest
@@ -60,7 +61,7 @@ class ServerTest
     private var id = 0
     private var electionTime: FiniteDuration = 150 millis
     private var tickTime: FiniteDuration = 100 millis
-  
+
     protected def clusterSetup(): Unit
 
     def setId(id: Int): this.type = {
@@ -88,6 +89,7 @@ class ServerTest
       this
     }
 
+    val name: String = s"srv-$id-${UID()}" // use random name
     lazy val probes: Array[TestProbe] = Array.fill(probeNum)(TestProbe("follower"))
     lazy val server: ActorRef = Server.run(
       id,
@@ -97,7 +99,8 @@ class ServerTest
       probes.zipWithIndex.map {
         case (probe, index) =>
           (index + 1, probe.ref.path.toString)
-      }.toMap updated (0, "akka://SeverSpec/user/svr0")
+      }.toMap updated (0, s"akka://SeverSpec/user/$name"),
+      name
     )
 
     def checkActions(actions: Seq[ProbeAction]): Unit = {
@@ -107,7 +110,7 @@ class ServerTest
           Thread.sleep(sleep.toMillis)
           checkActions(Seq(action))
         case Expect(msg) =>
-          probes foreach (_ expectMsg msg)
+          probes foreach (_.expectMsg(electionTime + tickTime, msg))
         case Within(min, max, actions @ _ *) =>
           // loose time range in case time assertion is not accurate
           val minMS = min.toMillis
@@ -178,17 +181,25 @@ class ServerTest
   /////////////////////////////////////////////////
 
   "Server" should "throw exception when member dict is empty" in {
-    intercept[IllegalArgumentException] {
+    intercept[EmptyInitMemberException] {
       val server = system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, Map()))
       server ! PoisonPill
     }
   }
 
-  "it" should "throw exception when election time is shorter than heartbeat interval" in {
-    intercept[IllegalArgumentException] {
-      val server = system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis, Map()))
+  it should "throw exception when election time is shorter than heartbeat interval" in {
+    intercept[HeartbeatIntervalException] {
+      val server =
+        system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis, Map(0 -> "svr")), "svr")
       server ! PoisonPill
     }
+  }
+
+  it should "start if none of the bootstrap members are resolved" in {
+    val server =
+      system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, Map(0 -> "abc")))
+    expectNoMsg()
+    server ! PoisonPill
   }
 
   "Follower" should "return current term and success flag when AppendEntries is received" in {
@@ -266,9 +277,7 @@ class ServerTest
 
   it should "launch election after election timeout elapsed" in {
     new FollowerEndPointChecker()
-      .setActions(
-        Expect(RequestVote(1, 0, 0, 0))
-      )
+      .setActions(Expect(RequestVote(1, 0, 0, 0)))
       .run()
   }
 
@@ -293,11 +302,44 @@ class ServerTest
   }
 
   "Candidate" should "relaunch RequestVote every election time" in {
-    new CandidateEndPointChecker().setActions(
-      Within(150 millis, 200 millis, Expect(RequestVote(3, 0, 0, 0))),
-      Within(150 millis, 200 millis, Expect(RequestVote(2, 0, 0, 0))),
-      Within(150 millis, 200 millis, Expect(RequestVote(4, 0, 0, 0)))
-    )
+    new CandidateEndPointChecker()
+      .setActions(
+        Within(150 millis, 200 millis, Expect(RequestVote(2, 0, 0, 0))),
+        Within(150 millis, 200 millis, Expect(RequestVote(3, 0, 0, 0))),
+        Within(150 millis, 200 millis, Expect(RequestVote(4, 0, 0, 0)))
+      )
+      .run()
+  }
+
+  it should "resend cached client messages when it becomes leader" in {
+    new CandidateEndPointChecker()
+      .setActions(
+        Tell(Command("x", 1)),
+        Tell(Command("y", 2)),
+        Reply(RequestVoteResult(1, success = true)),
+        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(CommandAccepted()),
+        Expect(CommandAccepted())
+      )
+      .run()
+  }
+
+  it should "resend cached client messages when it go back to follower" in {
+    new CandidateEndPointChecker()
+      .setActions(
+        Tell(Command("x", 1)),
+        Tell(Command("y", 2)),
+        Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(2, success = true)),
+        Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)), // enforce resending cached message
+        Expect(AppendEntriesResult(2, success = true)),
+        Expect(RequestVote(3, 0, 0, 0)),
+        Reply(RequestVoteResult(3, success = true)),
+        Expect(AppendEntries(3, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(CommandAccepted()),
+        Expect(CommandAccepted())
+      )
+      .run()
   }
 
   it should "become leader when received messages of majority" in {
