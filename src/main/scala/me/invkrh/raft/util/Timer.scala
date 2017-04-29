@@ -6,7 +6,7 @@ import scala.language.postfixOps
 import scala.util.Random
 
 import akka.actor.{ActorRef, Cancellable, Scheduler}
-import me.invkrh.raft.RaftMessage.Event
+import me.invkrh.raft.core.Message._
 
 trait Timer {
   var cancellable: Cancellable = _
@@ -22,15 +22,15 @@ trait Timer {
   }
 }
 
-class FixedTimer(duration: FiniteDuration, event: Event)(implicit scheduler: Scheduler,
-                                                         target: ActorRef)
+class FixedTimer(duration: FiniteDuration, event: EventMessage)(implicit scheduler: Scheduler,
+                                                                target: ActorRef)
     extends Timer {
   def start(): Unit = {
     cancellable = scheduler.scheduleOnce(duration, target, event)
   }
 }
 
-class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: Event)(
+class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: EventMessage)(
   implicit scheduler: Scheduler,
   target: ActorRef)
     extends Timer {
@@ -40,8 +40,8 @@ class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: Event)(
   }
 }
 
-class PeriodicTimer(duration: FiniteDuration, event: Event)(implicit scheduler: Scheduler,
-                                                            target: ActorRef)
+class PeriodicTimer(duration: FiniteDuration, event: EventMessage)(implicit scheduler: Scheduler,
+                                                                   target: ActorRef)
     extends Timer {
   def start(): Unit = {
     cancellable = scheduler.schedule(Duration.Zero, duration, target, event)

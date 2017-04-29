@@ -6,8 +6,9 @@ import scala.concurrent.{Await, Future}
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
-import me.invkrh.raft.Exception.{EmptyInitMemberException, HeartbeatIntervalException}
-import me.invkrh.raft.RaftMessage._
+import me.invkrh.raft.core.Exception.{EmptyInitMemberException, HeartbeatIntervalException}
+import me.invkrh.raft.core.Message._
+import me.invkrh.raft.core.Server
 import me.invkrh.raft.util.{Metric, UID}
 import org.scalatest._
 
@@ -38,17 +39,17 @@ class ServerTest
   // expect no messages
   case class ExpNoMsg() extends ProbeAction
   // expect message
-  case class Expect(message: Message) extends ProbeAction
+  case class Expect(message: RaftMessage) extends ProbeAction
   // tell message
-  case class Tell(message: Message) extends ProbeAction
+  case class Tell(message: RaftMessage) extends ProbeAction
   // reply message for ask pattern
-  case class Reply(message: Message) extends ProbeAction
+  case class Reply(message: RaftMessage) extends ProbeAction
   // action happens after sleep time
   case class Delay(sleep: FiniteDuration, action: ProbeAction) extends ProbeAction
   // majority of the probes reply
-  case class MajorReply(message: Message, msgForOthers: Option[Message] = None) extends ProbeAction
+  case class MajorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None) extends ProbeAction
   // minority of the probes reply
-  case class MinorReply(message: Message, msgForOthers: Option[Message] = None) extends ProbeAction
+  case class MinorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None) extends ProbeAction
   // action finishes within the duration
   case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeAction*)
       extends ProbeAction

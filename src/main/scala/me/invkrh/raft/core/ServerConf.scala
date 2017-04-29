@@ -1,4 +1,4 @@
-package me.invkrh.raft
+package me.invkrh.raft.core
 
 import java.io.File
 import java.net.URL

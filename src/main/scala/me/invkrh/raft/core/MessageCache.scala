@@ -1,12 +1,12 @@
-package me.invkrh.raft
+package me.invkrh.raft.core
 
 import scala.collection.mutable.ArrayBuffer
 
 import akka.actor.ActorRef
-import me.invkrh.raft.RaftMessage.Message
+import me.invkrh.raft.core.Message.RaftMessage
 import me.invkrh.raft.util.Logging
 
-class MessageCache[T <: Message](serverId: Int, name: String = "") extends Logging {
+class MessageCache[T <: RaftMessage](serverId: Int, name: String = "") extends Logging {
   override val logPrefix: String = s"[$serverId] [$name]"
   private val cache: ArrayBuffer[(ActorRef, T)] = new ArrayBuffer()
 

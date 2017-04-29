@@ -1,4 +1,4 @@
-package me.invkrh.raft
+package me.invkrh.raft.core
 
 object Exception {
   
@@ -11,4 +11,5 @@ object Exception {
   
   final case class HeartbeatIntervalException()
     extends IllegalArgumentException("Heartbeat interval should be smaller than the election time")
+  
 }

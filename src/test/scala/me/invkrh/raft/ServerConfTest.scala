@@ -4,6 +4,7 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import com.typesafe.config.ConfigFactory
+import me.invkrh.raft.core.ServerConf
 import org.scalatest.FlatSpecLike
 
 class ServerConfTest extends FlatSpecLike {

@@ -1,4 +1,4 @@
-package me.invkrh.raft
+package me.invkrh.raft.core
 
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
@@ -9,8 +9,8 @@ import scala.util.{Failure, Success, Try}
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler, Status}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
-import me.invkrh.raft.RaftMessage._
-import me.invkrh.raft.Exception._
+import me.invkrh.raft.core.Exception._
+import me.invkrh.raft.core.Message._
 import me.invkrh.raft.util._
 
 object Server {
@@ -173,7 +173,7 @@ class Server(val id: Int,
     info(s"=== end of processing $requestName ===")
   }
 
-  def flushMessageCache[T <: Message](buffer: ArrayBuffer[(ActorRef, T)]): Unit = {
+  def flushMessageCache[T <: RaftMessage](buffer: ArrayBuffer[(ActorRef, T)]): Unit = {
     if (buffer.isEmpty) {
       info("Message buffer is empty, no flushing")
     } else {

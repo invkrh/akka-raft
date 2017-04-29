@@ -8,7 +8,8 @@ import akka.actor.ActorSystem
 import akka.pattern.ask
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import me.invkrh.raft.RaftMessage.{ClientMessage, Command, CommandAccepted}
+import me.invkrh.raft.core.Message.{ClientMessage, Command, CommandAccepted}
+import me.invkrh.raft.core.Server
 import me.invkrh.raft.util.Metric
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FlatSpecLike}
 
