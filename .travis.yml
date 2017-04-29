@@ -10,7 +10,7 @@ branches:
     - master
 
 after_success:
-  - bash <(curl -s https://codecov.io/bash) -t d4328352-6a6e-43ba-8562-bd30c3dcf221
+  - bash <(curl -s https://codecov.io/bash)
 
 sudo: false
 cache:
