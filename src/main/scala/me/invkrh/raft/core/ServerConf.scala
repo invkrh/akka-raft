@@ -5,6 +5,7 @@ import java.net.URL
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 import com.typesafe.config.{Config, ConfigFactory}
 

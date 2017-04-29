@@ -173,16 +173,6 @@ class Server(val id: Int,
     info(s"=== end of processing $requestName ===")
   }
 
-  def flushMessageCache[T <: RaftMessage](buffer: ArrayBuffer[(ActorRef, T)]): Unit = {
-    if (buffer.isEmpty) {
-      info("Message buffer is empty, no flushing")
-    } else {
-      info(s"Flush messages in buffer with ${buffer.size} message in it")
-      buffer foreach { case (src, msg) => self.tell(msg, src) }
-      buffer.clear
-    }
-  }
-
   def issueVoteRequest(): Unit = {
     distributeRPC(RequestVote(curTerm, id, 0, 0))
   }

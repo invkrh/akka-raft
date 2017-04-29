@@ -1,4 +1,4 @@
-package me.invkrh.raft.util
+package me.invkrh.raft.core
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._

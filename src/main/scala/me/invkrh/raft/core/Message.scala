@@ -13,12 +13,13 @@ object Message {
   case object StartElection extends EventMessage
   case class Resolved(serverId: Int, serverRef: ActorRef) extends EventMessage
 
-
   trait ClientMessage extends RaftMessage
   case class Command(key: String, value: Int) extends ClientMessage
   case class CommandAccepted() extends ClientMessage
   case class CommandRejected(info: String) extends ClientMessage
-
+  
+  case class LogEntry(term: Int, command: Command)
+  
   // internal RPC message
   trait RPCMessage extends RaftMessage {
     def term: Int
@@ -39,7 +40,7 @@ object Message {
   }
   case class AppendEntriesResult(term: Int, success: Boolean) extends RPCResult
   case class RequestVoteResult(term: Int, success: Boolean) extends RPCResult
-
-  case class LogEntry(term: Int, command: Command)
+  
   case class CallBack(request: RPCMessage, replies: Seq[(ActorRef, Try[RPCResult])])
+      extends RaftMessage
 }

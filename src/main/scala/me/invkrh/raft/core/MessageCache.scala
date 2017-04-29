@@ -13,11 +13,12 @@ class MessageCache[T <: RaftMessage](serverId: Int, name: String = "") extends L
   def add(sender: ActorRef, msg: T): Unit = cache.append((sender, msg))
   def flushTo(target: ActorRef): Unit = {
     if (cache.isEmpty) {
-      info("Cache is empty, no resending")
+      info("Cache is empty, no relaying")
     } else {
-      info(s"${cache.size} cached messages found, resending")
+      info(s"${cache.size} cached messages found, relaying")
       cache foreach { case (src, msg) => target.tell(msg, src) }
       cache.clear()
+      info(s"Relay finished, cache is flushed")
     }
   }
 }

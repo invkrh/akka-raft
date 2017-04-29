@@ -2,6 +2,7 @@ package me.invkrh.raft
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
+import scala.language.postfixOps
 
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.{AskTimeoutException, gracefulStop}
@@ -383,6 +384,16 @@ class ServerTest
         Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
         Expect(AppendEntriesResult(2, success = true)),
         Expect(RequestVote(3, 0, 0, 0))
+      )
+      .run()
+  }
+  
+  it should "reject AppendEntries if its term is smaller than current term" in {
+    new CandidateEndPointChecker()
+      .setProbeNum(5)
+      .setActions(
+        Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(1, success = false))
       )
       .run()
   }
