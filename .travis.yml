@@ -1,0 +1,23 @@
+language: scala
+scala:
+  - "2.11.8"
+jdk:
+  - oraclejdk8
+
+script: sbt clean package coverage test coverageReport
+branches:
+  only:
+    - master
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash) -t d4328352-6a6e-43ba-8562-bd30c3dcf221
+
+sudo: false
+cache:
+  directories:
+    - $HOME/.ivy2/cache
+    - $HOME/.sbt/boot/
+before_cache:
+  # Tricks to avoid unnecessary cache updates
+  - find $HOME/.ivy2 -name "ivydata-*.properties" -delete
+  - find $HOME/.sbt -name "*.lock" -delete
