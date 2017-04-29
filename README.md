@@ -1,4 +1,5 @@
 # akka-raft
+[![Build Status](https://travis-ci.org/invkrh/akka-raft.svg?branch=master)](https://travis-ci.org/invkrh/akka-raft)
 [![codecov](https://codecov.io/gh/invkrh/akka-raft/branch/master/graph/badge.svg?token=nH0SP8GvXq)](https://codecov.io/gh/invkrh/akka-raft)
 
 An implementation of raft consensus algorithm based on akka
