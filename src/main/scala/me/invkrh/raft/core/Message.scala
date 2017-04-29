@@ -41,6 +41,6 @@ object Message {
   case class AppendEntriesResult(term: Int, success: Boolean) extends RPCResult
   case class RequestVoteResult(term: Int, success: Boolean) extends RPCResult
   
-  case class CallBack(request: RPCMessage, replies: Seq[(ActorRef, Try[RPCResult])])
+  case class CallBack(request: RPCMessage, responses: Seq[(ActorRef, Try[RPCResult])])
       extends RaftMessage
 }

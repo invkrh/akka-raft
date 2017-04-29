@@ -61,7 +61,7 @@ class Server(val id: Int,
   override val logPrefix: String = s"[$id]"
 
   var curTerm = 0
-  var curState: State.Value = State.Unknown
+  var curState: State.Value = State.Init
   var curLeader: Option[Int] = None
   var votedFor: Option[Int] = None
   var members: Map[Int, ActorRef] = Map()
@@ -107,6 +107,7 @@ class Server(val id: Int,
     }
   }
 
+  // TODO: retries is a conf ?
   def distributeRPC(msg: RPCMessage, retries: Int = 1): Unit = {
     implicit val timeout = Timeout(tickTime / retries)
     Future
@@ -128,14 +129,8 @@ class Server(val id: Int,
       } pipeTo self
   }
 
-  def processReplies(results: Seq[(ActorRef, Try[RPCResult])])(
-    majorityHandler: Int => Unit): Unit = {
-    val requestName =
-      if (curState == State.Leader) AppendEntriesResult.getClass.getSimpleName.stripSuffix("$")
-      else if (curState == State.Candidate)
-        RequestVoteResult.getClass.getSimpleName.stripSuffix("$")
-      else throw new Exception("Follower must not process request results")
-
+  def processCallBack(callback: CallBack)(majorityHandler: Int => Unit): Unit = {
+    val results = callback.responses
     val (maxTerm, validReplyCount) = results.foldLeft(curTerm, 1) {
       case ((curMaxTerm, count), (follower, tryRes)) =>
         tryRes match {
@@ -155,7 +150,7 @@ class Server(val id: Int,
                 "The term of reply received must not be smaller than is current term")
             }
           case Failure(e) =>
-            warn(s"Can not get $requestName from ${follower.path} with error: " + e)
+            warn(s"Can not get ${callback.request} from ${follower.path} with error: " + e)
             (curMaxTerm, count)
         }
     }
@@ -170,7 +165,7 @@ class Server(val id: Int,
             s"a new round will be launched")
       }
     }
-    info(s"=== end of processing $requestName ===")
+    info(s"=== end of processing ${callback.request} ===")
   }
 
   def issueVoteRequest(): Unit = {
@@ -255,8 +250,8 @@ class Server(val id: Int,
           info(s"Leader has not been elected, command $cmd cached")
           clientMessageCache.add(sender(), cmd)
       }
-    case CallBack(request: RequestVote, responses) =>
-      processReplies(responses) { majCnt =>
+    case cb: CallBack =>
+      processCallBack(cb) { majCnt =>
         info(
           s"Election for term $curTerm is ended since majority is reached " +
             s"($majCnt / ${members.size})")
@@ -284,8 +279,8 @@ class Server(val id: Int,
     case cmd: Command =>
       processClientRequest(cmd)
       sender() ! CommandAccepted()
-    case CallBack(request: AppendEntries, responses) =>
-      processReplies(responses) { majCnt =>
+    case cb: CallBack =>
+      processCallBack(cb) { majCnt =>
         info(
           s"Heartbeat for term $curTerm is ended since majority is reached " +
             s"($majCnt / ${members.size}), committing logs")
