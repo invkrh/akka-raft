@@ -6,7 +6,7 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler, Status}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 import me.invkrh.raft.RaftMessage._
@@ -66,9 +66,8 @@ class Server(val id: Int,
   var votedFor: Option[Int] = None
   var members: Map[Int, ActorRef] = Map()
 
-  // TODO: Add buffer class (improve log and encapsulation, here maybe)
-  val rpcMessageCache: ArrayBuffer[(ActorRef, RPCMessage)] = new ArrayBuffer()
-  val clientMessageCache: ArrayBuffer[(ActorRef, ClientMessage)] = new ArrayBuffer()
+  val rpcMessageCache = new MessageCache[RPCMessage](id, "rpc msg")
+  val clientMessageCache = new MessageCache[ClientMessage](id, "client msg")
 
   val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
   val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
@@ -82,11 +81,6 @@ class Server(val id: Int,
         .actorSelection(path)
         .resolveOne(timeout)
         .map(ref => Resolved(serverId, ref))
-        .recover {
-          case e =>
-            warn(s"Can not find server under path: $path")
-            throw e // TODO: use Status.Failure, need to return an exception which will be embraced in Status.Failure
-        }
       f pipeTo self
   }
 
@@ -207,11 +201,13 @@ class Server(val id: Int,
       members = members.updated(serverId, ref)
       if (members.size == memberDict.size) {
         becomeFollower(curTerm)
+        rpcMessageCache.flushTo(self)
       }
+    case Status.Failure(f) => warn(f.getMessage) // init member resolution
     case msg: RPCMessage =>
-      rpcMessageCache.append((sender(), msg))
+      rpcMessageCache.add(sender(), msg)
     case msg: ClientMessage =>
-      clientMessageCache.append((sender(), msg))
+      clientMessageCache.add(sender(), msg)
   }
 
   def follower: Receive = {
@@ -222,8 +218,8 @@ class Server(val id: Int,
             members.getOrElse(leaderId, throw new Exception("Unknown leader id: " + leaderId))
           leaderRef forward cmd
         case None =>
-          info("Leader has not been elected, command cached")
-          clientMessageCache.append((sender(), cmd))
+          info(s"Leader has not been elected, command $cmd cached")
+          clientMessageCache.add(sender(), cmd)
       }
     // Timer Event
     case StartElection => becomeCandidate()
@@ -237,7 +233,7 @@ class Server(val id: Int,
         // curLeader can not be the sender since this is an endpoint for ask pattern,
         // so the sender is just a temp actor. Need to figure out leader from AppendEntries request
         curLeader = Some(leadId) // maintain authority
-        flushMessageCache(clientMessageCache)
+        clientMessageCache.flushTo(self)
         sender ! AppendEntriesResult(curTerm, success = true)
         electionTimer.restart() // only valid heartbeat refresh election timer
       }
@@ -264,11 +260,10 @@ class Server(val id: Int,
   def candidate: Receive = {
     case cmd: ClientMessage =>
       curLeader match {
-        case Some(_) =>
-          throw new Exception("Leader should be empty for candidate")
+        case Some(_) => error("Leader should be empty for candidate")
         case None =>
-          info("Leader has not been elected, command cached")
-          clientMessageCache.append((sender(), cmd))
+          info(s"Leader has not been elected, command $cmd cached")
+          clientMessageCache.add(sender(), cmd)
       }
     case CallBack(request: RequestVote, responses) =>
       processReplies(responses) { majCnt =>
@@ -321,14 +316,13 @@ class Server(val id: Int,
     info(s"Switch from $oldState to follower, current term is $curTerm")
     heartBeatTimer.stop()
     electionTimer.restart()
-    flushMessageCache(rpcMessageCache)
   }
 
   def becomeCandidate(): Unit = {
     curState = State.Candidate
     curTerm = curTerm + 1
     votedFor = Some(id)
-    curLeader = None //TODO: Test
+    curLeader = None
     become(candidate)
     info(s"Election for term $curTerm started, server $id becomes candidate")
     electionTimer.restart()
@@ -342,7 +336,7 @@ class Server(val id: Int,
     info(s"Server $id becomes leader")
     electionTimer.stop()
     heartBeatTimer.restart()
-    flushMessageCache(clientMessageCache)
+    clientMessageCache.flushTo(self)
   }
 
 }
