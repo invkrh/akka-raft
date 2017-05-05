@@ -6,8 +6,7 @@ import akka.actor.ActorRef
 import me.invkrh.raft.core.Message.RaftMessage
 import me.invkrh.raft.util.Logging
 
-class MessageCache[T <: RaftMessage](serverId: Int, name: String = "") extends Logging {
-  override val logPrefix: String = s"[$serverId] [$name]"
+class MessageCache[T <: RaftMessage]() extends Logging {
   private val cache: ArrayBuffer[(ActorRef, T)] = new ArrayBuffer()
 
   def add(sender: ActorRef, msg: T): Unit = cache.append((sender, msg))

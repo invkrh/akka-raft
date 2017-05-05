@@ -9,7 +9,7 @@ import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import me.invkrh.raft.core.Exception.{EmptyInitMemberException, HeartbeatIntervalException}
 import me.invkrh.raft.core.Message._
-import me.invkrh.raft.core.Server
+import me.invkrh.raft.core.{Server, State}
 import me.invkrh.raft.util.{Metric, UID}
 import org.scalatest._
 
@@ -36,7 +36,13 @@ class ServerTest
     }
   }
 
-  trait ProbeAction
+  trait Action
+
+  // Client Action
+  case class ClientAction(f: () => Unit) extends Action
+
+  // ProbeAction
+  trait ProbeAction extends Action
   // expect no messages
   case class ExpNoMsg() extends ProbeAction
   // expect message
@@ -48,14 +54,18 @@ class ServerTest
   // action happens after sleep time
   case class Delay(sleep: FiniteDuration, action: ProbeAction) extends ProbeAction
   // majority of the probes reply
-  case class MajorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None) extends ProbeAction
+  case class MajorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None)
+      extends ProbeAction
   // minority of the probes reply
-  case class MinorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None) extends ProbeAction
+  case class MinorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None)
+      extends ProbeAction
   // action finishes within the duration
   case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeAction*)
       extends ProbeAction
   // action repeats itself
   case class Rep(times: Int, actions: ProbeAction*) extends ProbeAction
+  // wait for message succeed the partial func and return true
+  case class FishForMsg(f: PartialFunction[Any, Boolean]) extends ProbeAction
 
   trait EndpointChecker {
     private var probeNum: Int = 1
@@ -93,20 +103,11 @@ class ServerTest
 
     val name: String = s"srv-$id-${UID()}" // use random name
     lazy val probes: Array[TestProbe] = Array.fill(probeNum)(TestProbe("follower"))
-    lazy val server: ActorRef = Server.run(
-      id,
-      electionTime,
-      electionTime,
-      tickTime,
-      probes.zipWithIndex.map {
-        case (probe, index) =>
-          (index + 1, probe.ref.path.toString)
-      }.toMap updated (0, s"akka://SeverSpec/user/$name"),
-      name
-    )
+    lazy val server: ActorRef = Server.run(id, electionTime, electionTime, tickTime, name)
 
-    def checkActions(actions: Seq[ProbeAction]): Unit = {
+    def checkActions(actions: Seq[Action]): Unit = {
       actions foreach {
+        case ClientAction(f) => f()
         case ExpNoMsg() => probes foreach (_ expectNoMsg)
         case Delay(sleep, action) =>
           Thread.sleep(sleep.toMillis)
@@ -146,12 +147,15 @@ class ServerTest
           (0 until times).foreach { _ =>
             checkActions(actions)
           }
+        case FishForMsg(func) =>
+          probes foreach { _.fishForMessage(10 seconds)(func) }
       }
     }
 
     def run(): Unit = {
-      // enforce lazy val
-      info("Checking " + this.server.path)
+      // Init server and also enforce lazy val
+      val dict = probes.zipWithIndex.map { case (p, i) => (i + 1, p.ref) }.toMap updated (0, server)
+      server ! Init(dict)
       clusterSetup()
       checkActions(actions)
       probes foreach (_.ref ! PoisonPill)
@@ -182,24 +186,17 @@ class ServerTest
   //  Leader Election
   /////////////////////////////////////////////////
 
-  "Server" should "throw exception when member dict is empty" in {
-    intercept[EmptyInitMemberException] {
-      val server = system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, Map()))
-      server ! PoisonPill
-    }
-  }
-
-  it should "throw exception when election time is shorter than heartbeat interval" in {
+  "Server" should "throw exception when election time is shorter than heartbeat interval" in {
     intercept[HeartbeatIntervalException] {
       val server =
-        system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis, Map(0 -> "svr")), "svr")
+        system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis), "svr")
       server ! PoisonPill
     }
   }
 
   it should "start if none of the bootstrap members are resolved" in {
     val server =
-      system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, Map(0 -> "abc")))
+      system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis))
     expectNoMsg()
     server ! PoisonPill
   }
@@ -209,17 +206,6 @@ class ServerTest
       .setActions(
         Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)),
         Expect(AppendEntriesResult(0, success = true))
-      )
-      .run()
-  }
-
-  it should "resend commands received when leader was not elected" in {
-    new FollowerEndPointChecker()
-      .setActions(
-        Tell(Command("x", 1)),
-        Tell(AppendEntries(0, 1, 0, 0, Seq[LogEntry](), 0)),
-        Expect(AppendEntriesResult(0, success = true)),
-        Expect(Command("x", 1))
       )
       .run()
   }
@@ -303,6 +289,33 @@ class ServerTest
       .run()
   }
 
+  it should "resend command to leader if leader is elected" in {
+    new FollowerEndPointChecker()
+      .setActions(
+        Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)), // 1 is the id of leader
+        Expect(AppendEntriesResult(2, success = true)), // leader is set
+        Tell(Command("x", 1)), // reuse leader ref as client ref
+        Tell(Command("y", 2)),
+        FishForMsg { case _: Command => true },
+        FishForMsg { case _: Command => true }
+      )
+      .run()
+  }
+
+  it should "respond command received at term = 0 (right after init) when it becomes leader" in {
+    new FollowerEndPointChecker()
+      .setElectionTime(1 seconds) // long election time to keep server in initialized follower state
+      .setActions(
+        Tell(Command("x", 1)), // reuse probe as client
+        Tell(Command("y", 2)), // reuse probe as client
+        Expect(RequestVote(1,0,0,0)),
+        Reply(RequestVoteResult(1, success = true)),
+        FishForMsg { case CommandResponse(true, _) => true },
+        FishForMsg { case CommandResponse(true, _) => true }
+      )
+      .run()
+  }
+
   "Candidate" should "relaunch RequestVote every election time" in {
     new CandidateEndPointChecker()
       .setActions(
@@ -313,33 +326,24 @@ class ServerTest
       .run()
   }
 
-  it should "resend cached client messages when it becomes leader" in {
+  it should "respond commands received right after becoming candidate when it finally become leader" in {
     new CandidateEndPointChecker()
       .setActions(
         Tell(Command("x", 1)),
         Tell(Command("y", 2)),
         Reply(RequestVoteResult(1, success = true)),
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
-        Expect(CommandAccepted()),
-        Expect(CommandAccepted())
+        FishForMsg { case CommandResponse(true, _) => true },
+        FishForMsg { case CommandResponse(true, _) => true }
       )
       .run()
   }
-
-  it should "resend cached client messages when it go back to follower" in {
+  
+  it should "start a new term if no one wins the election" in { // 1 server vs 1 probe
     new CandidateEndPointChecker()
+      .setProbeNum(1)
       .setActions(
-        Tell(Command("x", 1)),
-        Tell(Command("y", 2)),
-        Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
-        Expect(AppendEntriesResult(2, success = true)),
-        Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)), // enforce resending cached message
-        Expect(AppendEntriesResult(2, success = true)),
-        Expect(RequestVote(3, 0, 0, 0)),
-        Reply(RequestVoteResult(3, success = true)),
-        Expect(AppendEntries(3, 0, 0, 0, Seq[LogEntry](), 0)),
-        Expect(CommandAccepted()),
-        Expect(CommandAccepted())
+        Reply(RequestVoteResult(1, success = false)),
+        Expect(RequestVote(2, 0, 0, 0))
       )
       .run()
   }
@@ -387,7 +391,7 @@ class ServerTest
       )
       .run()
   }
-  
+
   it should "reject AppendEntries if its term is smaller than current term" in {
     new CandidateEndPointChecker()
       .setProbeNum(5)

@@ -4,38 +4,36 @@ import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
+import scala.{PartialFunction => PF}
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler, Status}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 import me.invkrh.raft.core.Exception._
-import me.invkrh.raft.core.Message._
+import me.invkrh.raft.core.Message.{RequestVote, StartElection, Tick, _}
 import me.invkrh.raft.util._
 
 object Server {
   def props(id: Int,
             minElectionTime: FiniteDuration,
             maxElectionTime: FiniteDuration,
-            tickTime: FiniteDuration,
-            memberDict: Map[Int, String]): Props = {
+            tickTime: FiniteDuration): Props = {
     checkOrThrow(minElectionTime > tickTime, HeartbeatIntervalException())
-    checkOrThrow(memberDict.nonEmpty, EmptyInitMemberException())
-    Props(new Server(id, minElectionTime, maxElectionTime, tickTime, memberDict))
+    Props(new Server(id, minElectionTime, maxElectionTime, tickTime))
   }
 
   def props(conf: ServerConf): Props = {
-    props(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime, conf.memberDict)
+    props(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
   }
 
   def run(id: Int,
           minElectionTime: FiniteDuration,
           maxElectionTime: FiniteDuration,
           tickTime: FiniteDuration,
-          memberDict: Map[Int, String],
           name: String)(implicit system: ActorSystem): ActorRef = {
     system.actorOf(
-      props(id, minElectionTime, maxElectionTime, tickTime, memberDict),
+      props(id, minElectionTime, maxElectionTime, tickTime),
       name
     )
   }
@@ -45,20 +43,20 @@ object Server {
   }
 }
 
+// TODO: use --bootstrap.servers as input arguments
 class Server(val id: Int,
              minElectionTime: FiniteDuration,
              maxElectionTime: FiniteDuration,
-             tickTime: FiniteDuration,
-             memberDict: Map[Int, String])
+             tickTime: FiniteDuration)
     extends Actor
     with Logging {
 
   def this(conf: ServerConf) =
-    this(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime, conf.memberDict)
+    this(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
 
   import context._
   implicit val scheduler: Scheduler = system.scheduler
-  override val logPrefix: String = s"[$id]"
+  override def logPrefix: String = s"[$id:$curState]"
 
   var curTerm = 0
   var curState: State.Value = State.Init
@@ -66,23 +64,13 @@ class Server(val id: Int,
   var votedFor: Option[Int] = None
   var members: Map[Int, ActorRef] = Map()
 
-  val rpcMessageCache = new MessageCache[RPCMessage](id, "rpc msg")
-  val clientMessageCache = new MessageCache[ClientMessage](id, "client msg")
+  val clientMessageCache = new MessageCache[ClientMessage]()
 
   val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
   val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
   val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
 
   // TODO: Member Management problem, member is added one by one
-  memberDict foreach {
-    case (serverId, path) =>
-      val timeout = 5 seconds
-      val f = context
-        .actorSelection(path)
-        .resolveOne(timeout)
-        .map(ref => Resolved(serverId, ref))
-      f pipeTo self
-  }
 
   override def preStart(): Unit = {}
 
@@ -161,7 +149,7 @@ class Server(val id: Int,
         majorityHandler(validReplyCount)
       } else {
         info(
-          s"Only minority is reached ($validReplyCount / ${members.size}), " +
+          s"Majority is not reached ($validReplyCount / ${members.size}), " +
             s"a new round will be launched")
       }
     }
@@ -181,147 +169,149 @@ class Server(val id: Int,
   }
 
   override def receive: Receive = {
-    case Resolved(serverId, ref) =>
-      info(s"Find initial member with id=$serverId at ${ref.path}")
-      members = members.updated(serverId, ref)
-      if (members.size == memberDict.size) {
-        becomeFollower(curTerm)
-        rpcMessageCache.flushTo(self)
-      }
-    case Status.Failure(f) => warn(f.getMessage) // init member resolution
-    case msg: RPCMessage =>
-      rpcMessageCache.add(sender(), msg)
-    case msg: ClientMessage =>
-      clientMessageCache.add(sender(), msg)
+    case Init(memberDict) =>
+      info(s"Server $id initialized")
+      members = memberDict
+      becomeFollower(curTerm)
   }
 
-  def follower: Receive = {
-    case cmd: ClientMessage =>
-      curLeader match {
-        case Some(leaderId) =>
-          val leaderRef =
-            members.getOrElse(leaderId, throw new Exception("Unknown leader id: " + leaderId))
-          leaderRef forward cmd
-        case None =>
-          info(s"Leader has not been elected, command $cmd cached")
-          clientMessageCache.add(sender(), cmd)
-      }
-    // Timer Event
-    case StartElection => becomeCandidate()
-    // Leader's request
-    case AppendEntries(term, leadId, _, _, _, _) =>
-      if (curTerm > term) {
+  def appendEntriesEndPoint: Receive = {
+    case hb: AppendEntries =>
+      if (curTerm > hb.term) {
         sender ! AppendEntriesResult(curTerm, success = false)
       } else {
-        curTerm = term
-        votedFor = None
-        // curLeader can not be the sender since this is an endpoint for ask pattern,
-        // so the sender is just a temp actor. Need to figure out leader from AppendEntries request
-        curLeader = Some(leadId) // maintain authority
-        clientMessageCache.flushTo(self)
-        sender ! AppendEntriesResult(curTerm, success = true)
-        electionTimer.restart() // only valid heartbeat refresh election timer
+        if (curState == State.Leader && curTerm == hb.term) {
+          throw new Exception("Two leader detected")
+        }
+        // TODO: Add precessing
+        sender ! AppendEntriesResult(hb.term, success = true)
+        becomeFollower(hb.term, hb.leadId)
       }
-    // Candidate's request
-    case RequestVote(term, cand, lastIndex, lastTerm) =>
-      if (curTerm > term) {
+  }
+
+  def startElectionEndpoint: Receive = {
+    case StartElection => becomeCandidate()
+  }
+
+  def tickEndPoint: Receive = {
+    case Tick => issueHeartbeat()
+  }
+
+  def commandEndPoint: Receive = {
+    case cmd: Command =>
+      if (curState == State.Leader) {
+        processClientRequest(cmd)
+        sender() ! CommandResponse(success = true)
+      } else {
+        curLeader match {
+          case Some(leaderId) =>
+            if (curState == State.Candidate) {
+              throw new Exception("Leader should be empty for candidate")
+            } else if (curState == State.Follower) {
+              val leaderRef =
+                members.getOrElse(leaderId, throw new Exception("Unknown leader id: " + leaderId))
+              leaderRef forward cmd // TODO: if the sender is server itself, it will be a problem, add unit test
+            } else {
+              throw new Exception("Server state is inconsistent")
+            }
+          case None =>
+            clientMessageCache.add(sender, cmd)
+        }
+      }
+  }
+
+  def requestVoteEndPoint: Receive = {
+    case reqVote: RequestVote =>
+      if (curTerm > reqVote.term) {
         sender ! RequestVoteResult(curTerm, success = false)
       } else { // when curTerm <= term
-        curTerm = term
-        if (votedFor.isEmpty || votedFor.get == cand) {
-          votedFor = Some(cand)
+        curTerm = reqVote.term
+        if (votedFor.isEmpty || votedFor.get == reqVote.candidateId) {
+          votedFor = Some(reqVote.candidateId)
           sender ! RequestVoteResult(curTerm, success = true)
           electionTimer.restart()
         } else {
           sender ! RequestVoteResult(curTerm, success = false)
         }
       }
-    // Irrelevant messages
-    case others: RPCMessage =>
-      warn(s"Irrelevant message [$others] received from ${sender().path}")
-    // throw new IrrelevantMessageException(others, sender)
   }
 
-  def candidate: Receive = {
-    case cmd: ClientMessage =>
-      curLeader match {
-        case Some(_) => error("Leader should be empty for candidate")
-        case None =>
-          info(s"Leader has not been elected, command $cmd cached")
-          clientMessageCache.add(sender(), cmd)
-      }
-    case cb: CallBack =>
-      processCallBack(cb) { majCnt =>
-        info(
-          s"Election for term $curTerm is ended since majority is reached " +
-            s"($majCnt / ${members.size})")
-        becomeLeader()
-      }
-    // Timer Event
-    case StartElection => becomeCandidate()
-    // New leader's request
-    case AppendEntries(term, leadId, prevLogIndex, prevLogTerm, entries, leaderCommit) =>
-      if (curTerm > term) {
-        // rejects RPC and continues in candidate state
-        sender ! AppendEntriesResult(curTerm, success = false)
-      } else { // new leader detected
-        sender ! AppendEntriesResult(term, success = true)
-        info(s"New leader detected during election by receiving heartbeat with larger term $term")
-        becomeFollower(term)
-      }
-    // Irrelevant messages
-    case others: RPCMessage =>
-      warn(s"Irrelevant message [$others] received from ${sender().path}")
-    // throw new IrrelevantMessageException(others, sender)
+  def callBackEndPoint(majorityHandler: Int => Unit): Receive = {
+    case cb: CallBack => processCallBack(cb)(majorityHandler)
   }
 
-  def leader: Receive = {
-    case cmd: Command =>
-      processClientRequest(cmd)
-      sender() ! CommandAccepted()
-    case cb: CallBack =>
-      processCallBack(cb) { majCnt =>
-        info(
-          s"Heartbeat for term $curTerm is ended since majority is reached " +
-            s"($majCnt / ${members.size}), committing logs")
-      }
-    // Timer Event
-    case Tick => issueHeartbeat()
-    // Irrelevant messages
+  def irrelevantMsgEndPoint: Receive = {
     case others: RPCMessage =>
       warn(s"Irrelevant message [$others] received from ${sender().path}")
-    // throw new IrrelevantMessageException(others, sender)
   }
 
-  def becomeFollower(newTerm: Int): Unit = {
-    val oldState = curState
+  def follower: Receive =
+    commandEndPoint orElse
+      startElectionEndpoint orElse
+      appendEntriesEndPoint orElse
+      requestVoteEndPoint orElse
+      irrelevantMsgEndPoint
+
+  def candidate: Receive =
+    callBackEndPoint { majCnt =>
+      info(s"Election for term $curTerm is ended since majority is reached " +
+        s"($majCnt / ${members.size})")
+      becomeLeader()
+    } orElse
+      commandEndPoint orElse
+      startElectionEndpoint orElse
+      appendEntriesEndPoint orElse
+      requestVoteEndPoint orElse
+      irrelevantMsgEndPoint
+
+  def leader: Receive =
+    callBackEndPoint { majCnt =>
+      info(s"Heartbeat for term $curTerm is ended since majority is reached " +
+        s"($majCnt / ${members.size}), committing logs")
+    } orElse
+      commandEndPoint orElse
+      tickEndPoint orElse
+      appendEntriesEndPoint orElse
+      requestVoteEndPoint orElse
+      irrelevantMsgEndPoint
+
+  def becomeFollower(newTerm: Int, newLeader: Int = -1): Unit = {
     curTerm = newTerm
     curState = State.Follower
+    votedFor = None
+//    info(s"Status: Follower, current term: $curTerm")
+    if (newLeader == -1) { // Unknown leader detected
+      curLeader = None
+    } else { // Know leader detected
+      curLeader = Some(newLeader)
+      clientMessageCache.flushTo(members(newLeader))
+    }
     become(follower)
-    info(s"Switch from $oldState to follower, current term is $curTerm")
     heartBeatTimer.stop()
     electionTimer.restart()
   }
 
   def becomeCandidate(): Unit = {
-    curState = State.Candidate
     curTerm = curTerm + 1
+    curState = State.Candidate
     votedFor = Some(id)
     curLeader = None
-    become(candidate)
     info(s"Election for term $curTerm started, server $id becomes candidate")
-    electionTimer.restart()
+    become(candidate)
     issueVoteRequest()
+    electionTimer.restart()
   }
 
   def becomeLeader(): Unit = {
+    // term not changed
     curState = State.Leader
     curLeader = Some(id)
-    become(leader)
+    votedFor = None
     info(s"Server $id becomes leader")
+    become(leader)
+    clientMessageCache.flushTo(self)
     electionTimer.stop()
     heartBeatTimer.restart()
-    clientMessageCache.flushTo(self)
   }
 
 }

@@ -11,12 +11,13 @@ object Message {
   trait EventMessage extends RaftMessage
   case object Tick extends EventMessage
   case object StartElection extends EventMessage
-  case class Resolved(serverId: Int, serverRef: ActorRef) extends EventMessage
+  case class Init(memberDict: Map[Int, ActorRef]) extends EventMessage
 
   trait ClientMessage extends RaftMessage
-  case class Command(key: String, value: Int) extends ClientMessage
-  case class CommandAccepted() extends ClientMessage
-  case class CommandRejected(info: String) extends ClientMessage
+  case class Command(key: String, value: Int) extends ClientMessage {
+    override def toString: String = s"$key = $value"
+  }
+  case class CommandResponse(success: Boolean, info: String = "")
   
   case class LogEntry(term: Int, command: Command)
   
