@@ -10,7 +10,6 @@ import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
 import me.invkrh.raft.core.Message.{Command, CommandResponse, Init}
 import me.invkrh.raft.core.Server
-import me.invkrh.raft.util.Metric
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FlatSpecLike}
 
 class ClusterTest
@@ -18,8 +17,7 @@ class ClusterTest
     with ImplicitSender
     with FlatSpecLike
     with BeforeAndAfterAll
-    with BeforeAndAfterEach
-    with Metric {
+    with BeforeAndAfterEach {
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)

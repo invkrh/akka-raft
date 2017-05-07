@@ -7,10 +7,10 @@ import scala.language.postfixOps
 import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
-import me.invkrh.raft.core.Exception.{EmptyInitMemberException, HeartbeatIntervalException}
+import me.invkrh.raft.core.Exception.HeartbeatIntervalException
 import me.invkrh.raft.core.Message._
 import me.invkrh.raft.core.{Server, State}
-import me.invkrh.raft.util.{Metric, UID}
+import me.invkrh.raft.util.UID
 import org.scalatest._
 
 class ServerTest
@@ -18,8 +18,7 @@ class ServerTest
     with ImplicitSender
     with FlatSpecLike
     with BeforeAndAfterAll
-    with BeforeAndAfterEach
-    with Metric {
+    with BeforeAndAfterEach {
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
@@ -68,13 +67,15 @@ class ServerTest
   case class FishForMsg(f: PartialFunction[Any, Boolean]) extends ProbeAction
 
   trait EndpointChecker {
-    private var probeNum: Int = 1
-    private var actions: List[ProbeAction] = List()
-    private var id = 0
-    private var electionTime: FiniteDuration = 150 millis
-    private var tickTime: FiniteDuration = 100 millis
+    protected var probeNum: Int = 1
+    protected var actions: List[ProbeAction] = List()
+    protected var id = 42
+    protected var electionTime: FiniteDuration = 150 millis
+    protected var tickTime: FiniteDuration = 100 millis
 
     protected def clusterSetup(): Unit
+
+    def getId: Int = id
 
     def setId(id: Int): this.type = {
       this.id = id
@@ -154,7 +155,7 @@ class ServerTest
 
     def run(): Unit = {
       // Init server and also enforce lazy val
-      val dict = probes.zipWithIndex.map { case (p, i) => (i + 1, p.ref) }.toMap updated (0, server)
+      val dict = probes.zipWithIndex.map { case (p, i) => (i + 1, p.ref) }.toMap updated (id, server)
       server ! Init(dict)
       clusterSetup()
       checkActions(actions)
@@ -169,14 +170,14 @@ class ServerTest
 
   class CandidateEndPointChecker() extends EndpointChecker {
     override def clusterSetup(): Unit = {
-      probes.foreach(_ expectMsg RequestVote(1, 0, 0, 0))
+      probes.foreach(_ expectMsg RequestVote(1, id, 0, 0))
     }
   }
 
   class LeaderEndPointChecker() extends EndpointChecker {
     override def clusterSetup(): Unit = {
       probes foreach { p =>
-        p expectMsg RequestVote(1, 0, 0, 0)
+        p expectMsg RequestVote(1, id, 0, 0)
         p.reply(RequestVoteResult(1, success = true))
       }
     }
@@ -258,8 +259,9 @@ class ServerTest
   }
 
   it should "launch election after election timeout elapsed" in {
-    new FollowerEndPointChecker()
-      .setActions(Expect(RequestVote(1, 0, 0, 0)))
+    val checker = new FollowerEndPointChecker()
+    checker
+      .setActions(Expect(RequestVote(1, checker.getId, 0, 0)))
       .run()
   }
 
@@ -267,7 +269,8 @@ class ServerTest
     val electionTime = 150.millis
     val tickTime = 100.millis
     val heartbeatNum = 3
-    new FollowerEndPointChecker()
+    val checker = new FollowerEndPointChecker()
+    checker
       .setElectionTime(electionTime)
       .setTickTime(tickTime)
       .setActions(
@@ -276,15 +279,15 @@ class ServerTest
           tickTime * heartbeatNum + electionTime * 2,
           Rep(
             heartbeatNum,
-            Delay(tickTime, Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0))),
+            Delay(tickTime, Tell(AppendEntries(0, checker.getId + 1, 0, 0, Seq[LogEntry](), 0))),
             Expect(AppendEntriesResult(0, success = true))
           ),
-          Expect(RequestVote(1, 0, 0, 0))
+          Expect(RequestVote(1, checker.getId, 0, 0))
         )
       )
       .run()
   }
-
+  
   it should "resend command to leader if leader is elected" in {
     new FollowerEndPointChecker()
       .setActions(
@@ -299,25 +302,51 @@ class ServerTest
   }
 
   it should "respond command received at term = 0 (right after init) when it becomes leader" in {
-    new FollowerEndPointChecker()
+    val checker = new FollowerEndPointChecker()
+    checker
       .setElectionTime(1 seconds) // long election time to keep server in initialized follower state
       .setActions(
         Tell(Command("x", 1)), // reuse probe as client
         Tell(Command("y", 2)), // reuse probe as client
-        Expect(RequestVote(1, 0, 0, 0)),
+        Expect(RequestVote(1, checker.getId, 0, 0)),
         Reply(RequestVoteResult(1, success = true)),
         FishForMsg { case CommandResponse(true, _) => true },
         FishForMsg { case CommandResponse(true, _) => true }
       )
       .run()
   }
+  
+  it should "return server status after receive GetStatus request" in {
+    val checker = new FollowerEndPointChecker()
+    checker
+      .setActions(
+      Tell(GetStatus), // reuse probe as client
+      Expect(Status(checker.getId, 0, State.Follower, None))
+    )
+      .run()
+  }
+  
+  it should "return server status after receive GetStatus request af" in {
+    val checker = new FollowerEndPointChecker()
+    val term = 10
+    val leaderId = 1
+    checker
+      .setActions(
+        Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(term, success = true)),
+        Tell(GetStatus),
+        Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
+      )
+      .run()
+  }
 
   "Candidate" should "relaunch RequestVote every election time" in {
-    new CandidateEndPointChecker()
+    val checker = new CandidateEndPointChecker()
+    checker
       .setActions(
-        Within(150 millis, 200 millis, Expect(RequestVote(2, 0, 0, 0))),
-        Within(150 millis, 200 millis, Expect(RequestVote(3, 0, 0, 0))),
-        Within(150 millis, 200 millis, Expect(RequestVote(4, 0, 0, 0)))
+        Within(150 millis, 200 millis, Expect(RequestVote(2, checker.getId, 0, 0))),
+        Within(150 millis, 200 millis, Expect(RequestVote(3, checker.getId, 0, 0))),
+        Within(150 millis, 200 millis, Expect(RequestVote(4, checker.getId, 0, 0)))
       )
       .run()
   }
@@ -336,51 +365,83 @@ class ServerTest
   }
 
   it should "start a new term if no one wins the election" in { // 1 server vs 1 probe
-    new CandidateEndPointChecker()
-      .setProbeNum(1)
-      .setActions(Reply(RequestVoteResult(1, success = false)), Expect(RequestVote(2, 0, 0, 0)))
+    val checker = new CandidateEndPointChecker()
+    checker
+      .setActions(
+        Reply(RequestVoteResult(1, success = false)),
+        Expect(RequestVote(2, checker.getId, 0, 0))
+      )
       .run()
   }
 
   it should "become leader when received messages of majority" in {
-    new CandidateEndPointChecker()
+    val checker = new CandidateEndPointChecker()
+    checker
       .setProbeNum(5)
       .setActions(
         MajorReply(RequestVoteResult(1, success = true)),
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0))
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0))
       )
       .run()
   }
 
   it should "launch election of the next term when only minority granted" in {
-    new CandidateEndPointChecker()
+    val checker = new CandidateEndPointChecker()
+    checker
       .setProbeNum(5)
       .setActions(
         MinorReply(
           RequestVoteResult(1, success = true),
           Some(RequestVoteResult(1, success = false))
         ),
-        Expect(RequestVote(2, 0, 0, 0))
+        Expect(RequestVote(2, checker.getId, 0, 0))
       )
       .run()
   }
 
-  it should "become follower when the received term in RequestVoteResult is larger than " +
+  it should "become follower when one of the received term in RequestVoteResult is larger than " +
     "current term" in {
-    new CandidateEndPointChecker()
+    val checker = new CandidateEndPointChecker()
+    checker
       .setProbeNum(5)
-      .setActions(Reply(RequestVoteResult(2, success = true)), Expect(RequestVote(3, 0, 0, 0)))
+      .setActions(
+        Reply(RequestVoteResult(2, success = true)),
+        Expect(RequestVote(3, checker.getId, 0, 0))
+      )
       .run()
   }
 
-  it should "become follower when received term in AppendEntriesResult is larger than " +
-    "current term" in {
+  it should "become follower if it receives a RequestVote with term larger than " +
+    "its current term" in {
     new CandidateEndPointChecker()
-      .setProbeNum(5)
+      .setActions(
+        Tell(RequestVote(2, 0, 0, 0)),
+        Expect(RequestVoteResult(2, success = true)),
+        Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(2, success = true))
+      )
+      .run()
+  }
+
+  it should "become follower if it receives a AppendEntries with term larger than " +
+    "its current term" in {
+    new CandidateEndPointChecker()
       .setActions(
         Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
         Expect(AppendEntriesResult(2, success = true)),
-        Expect(RequestVote(3, 0, 0, 0))
+        Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(2, success = true))
+      )
+      .run()
+  }
+
+  it should "become follower when received term in AppendEntriesResult equal to his own" in {
+    val checker = new CandidateEndPointChecker()
+    checker
+      .setActions(
+        Tell(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(1, success = true)),
+        Expect(RequestVote(2, checker.getId, 0, 0))
       )
       .run()
   }
@@ -394,67 +455,111 @@ class ServerTest
       )
       .run()
   }
+  
+  it should "return server status after receive GetStatus request af" in {
+    val checker = new CandidateEndPointChecker()
+    val term = 10
+    val leaderId = 1
+    checker
+      .setActions(
+        Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(term, success = true)),
+        Tell(GetStatus),
+        Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
+      )
+      .run()
+  }
 
   "leader" should "send heartbeat to every follower every heartbeat interval" in {
     val tickTime = 100.millis
-    new LeaderEndPointChecker()
+    val checker = new LeaderEndPointChecker()
+    checker
       .setActions(
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         Rep(
           3,
           Within(
             tickTime,
             tickTime * 2,
             Reply(AppendEntriesResult(1, success = true)),
-            Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0))
+            Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0))
           )
         )
       )
       .run()
   }
 
+  it should "become follower if it receives a RequestVote with term larger than " +
+    "its current term" in {
+    new LeaderEndPointChecker()
+      .setActions(
+        Tell(RequestVote(10, 0, 0, 0)),
+        Expect(RequestVoteResult(10, success = true)),
+        Tell(AppendEntries(10, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(10, success = true))
+      )
+      .run()
+  }
+
   it should "become follower if the received term of AppendEntriesResult is larger than " +
     "current term" in {
-    new LeaderEndPointChecker()
+    val checker = new LeaderEndPointChecker()
+    checker
       .setProbeNum(5)
       .setActions(
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         Reply(AppendEntriesResult(2, success = true)),
-        Expect(RequestVote(3, 0, 0, 0))
+        Expect(RequestVote(3, checker.getId, 0, 0))
       )
       .run()
   }
 
   it should "continue to distribute heartbeat when AppendEntry requests are rejected" in {
-    new LeaderEndPointChecker()
+    val checker = new LeaderEndPointChecker()
+    checker
       .setProbeNum(5)
       .setActions(
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         MinorReply(
           AppendEntriesResult(1, success = false),
           Some(AppendEntriesResult(1, success = true))
         ),
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         MinorReply(
           AppendEntriesResult(1, success = true),
           Some(AppendEntriesResult(1, success = false))
         ),
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         Reply(AppendEntriesResult(1, success = true))
       )
       .run()
   }
 
   it should "continue to distribute heartbeat when some heartbeat acks are not received" in {
-    new LeaderEndPointChecker()
+    val checker = new LeaderEndPointChecker()
+    checker
       .setProbeNum(5)
       .setActions(
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         MinorReply(AppendEntriesResult(1, success = false)),
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         MajorReply(AppendEntriesResult(1, success = true)),
-        Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         Reply(AppendEntriesResult(1, success = true))
+      )
+      .run()
+  }
+  
+  it should "return server status after receive GetStatus request af" in {
+    val checker = new LeaderEndPointChecker()
+    val term = 10
+    val leaderId = 1
+    checker
+      .setActions(
+        Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(term, success = true)),
+        Tell(GetStatus),
+        Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
       )
       .run()
   }

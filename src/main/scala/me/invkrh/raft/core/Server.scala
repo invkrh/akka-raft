@@ -52,10 +52,10 @@ class Server(val id: Int,
 
   import context._
   implicit val scheduler: Scheduler = system.scheduler
-  override def logPrefix: String = s"[$id:$curState]"
+  override def logPrefix: String = s"[$id-$curState]"
 
   var curTerm = 0
-  var curState: State.Value = State.Init
+  var curState: State.Value = State.Bootstrap
   var curLeaderId: Option[Int] = None
   var votedFor: Option[Int] = None
   var members: Map[Int, ActorRef] = Map()
@@ -166,7 +166,11 @@ class Server(val id: Int,
     info("Client command received: " + cmd)
   }
 
-  // TODO: Add admin endpoint
+  def adminEndpoint: Receive = {
+    case GetStatus =>
+      sender ! Status(id, curTerm, curState, curLeaderId)
+    // TODO: Add more admin endpoint
+  }
 
   def startElectionEndpoint: Receive = {
     case StartElection => becomeCandidate()
@@ -263,6 +267,7 @@ class Server(val id: Int,
       startElectionEndpoint orElse
       appendEntriesEndPoint orElse
       requestVoteEndPoint orElse
+      adminEndpoint orElse
       irrelevantMsgEndPoint
 
   def candidate: Receive =
@@ -277,6 +282,7 @@ class Server(val id: Int,
       startElectionEndpoint orElse
       appendEntriesEndPoint orElse
       requestVoteEndPoint orElse
+      adminEndpoint orElse
       irrelevantMsgEndPoint
 
   def leader: Receive =
@@ -290,6 +296,7 @@ class Server(val id: Int,
       tickEndPoint orElse
       appendEntriesEndPoint orElse
       requestVoteEndPoint orElse
+      adminEndpoint orElse
       irrelevantMsgEndPoint
 
   override def receive: Receive = {
@@ -303,10 +310,12 @@ class Server(val id: Int,
     curTerm = newTerm
     curState = State.Follower
     votedFor = None
-//    info(s"Status: Follower, current term: $curTerm")
-    if (newLeader == -1) { // Unknown new leader detected
+
+    if (newLeader == -1) { // New leader is unknown
+      info(s"At term $curTerm, unknown new leader detected")
       curLeaderId = None
-    } else { // Known new leader detected
+    } else { // New leader is already known
+      info(s"At term $curTerm, new leader $newLeader detected")
       curLeaderId = Some(newLeader)
       for {
         leaderId <- curLeaderId
