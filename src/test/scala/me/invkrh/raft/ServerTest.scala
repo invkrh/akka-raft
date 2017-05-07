@@ -201,7 +201,7 @@ class ServerTest
     server ! PoisonPill
   }
 
-  "Follower" should "return current term and success flag when AppendEntries is received" in {
+  "Follower" should "accept AppendEntries when the term of the message is equal to his own" in {
     new FollowerEndPointChecker()
       .setActions(
         Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)),
@@ -228,37 +228,31 @@ class ServerTest
       .run()
   }
 
-  it should "reject RequestVote when the term of the message is smaller than his own" in {
+  it should "reject RequestVote when the term of the message is equal to his own" in {
     new FollowerEndPointChecker()
-      .setActions(
-        Tell(RequestVote(-1, 0, 0, 0)),
-        Expect(RequestVoteResult(0, success = false))
-      )
+      .setActions(Tell(RequestVote(0, 0, 0, 0)), Expect(RequestVoteResult(0, success = false)))
       .run()
   }
 
-  it should "reply RequestVote with (at least )larger term which is received with the message" in {
+  it should "reject RequestVote when the term of the message is smaller than his own" in {
     new FollowerEndPointChecker()
-      .setActions(
-        Tell(RequestVote(0, 0, 0, 0)),
-        Expect(RequestVoteResult(0, success = true))
-      )
+      .setActions(Tell(RequestVote(-1, 0, 0, 0)), Expect(RequestVoteResult(0, success = false)))
       .run()
+  }
+
+  it should "accept RequestVote when the term of the message is (at least) larger than his own" in {
     new FollowerEndPointChecker()
-      .setActions(
-        Tell(RequestVote(1, 0, 0, 0)),
-        Expect(RequestVoteResult(1, success = true))
-      )
+      .setActions(Tell(RequestVote(10, 0, 0, 0)), Expect(RequestVoteResult(10, success = true)))
       .run()
   }
 
   it should "reject RequestVote when it has already voted" in {
     new FollowerEndPointChecker()
       .setActions(
-        Tell(RequestVote(0, 0, 0, 0)),
-        Expect(RequestVoteResult(0, success = true)),
-        Reply(RequestVote(0, 1, 0, 0)),
-        Expect(RequestVoteResult(0, success = false))
+        Tell(RequestVote(1, 0, 0, 0)),
+        Expect(RequestVoteResult(1, success = true)),
+        Reply(RequestVote(1, 1, 0, 0)),
+        Expect(RequestVoteResult(1, success = false))
       )
       .run()
   }
@@ -280,9 +274,11 @@ class ServerTest
         Within(
           tickTime * heartbeatNum + electionTime,
           tickTime * heartbeatNum + electionTime * 2,
-          Rep(heartbeatNum,
-              Delay(tickTime, Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0))),
-              Expect(AppendEntriesResult(0, success = true))),
+          Rep(
+            heartbeatNum,
+            Delay(tickTime, Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0))),
+            Expect(AppendEntriesResult(0, success = true))
+          ),
           Expect(RequestVote(1, 0, 0, 0))
         )
       )
@@ -308,7 +304,7 @@ class ServerTest
       .setActions(
         Tell(Command("x", 1)), // reuse probe as client
         Tell(Command("y", 2)), // reuse probe as client
-        Expect(RequestVote(1,0,0,0)),
+        Expect(RequestVote(1, 0, 0, 0)),
         Reply(RequestVoteResult(1, success = true)),
         FishForMsg { case CommandResponse(true, _) => true },
         FishForMsg { case CommandResponse(true, _) => true }
@@ -326,7 +322,8 @@ class ServerTest
       .run()
   }
 
-  it should "respond commands received right after becoming candidate when it finally become leader" in {
+  it should "respond commands received right after becoming candidate " +
+    "when it finally become leader" in {
     new CandidateEndPointChecker()
       .setActions(
         Tell(Command("x", 1)),
@@ -337,14 +334,11 @@ class ServerTest
       )
       .run()
   }
-  
+
   it should "start a new term if no one wins the election" in { // 1 server vs 1 probe
     new CandidateEndPointChecker()
       .setProbeNum(1)
-      .setActions(
-        Reply(RequestVoteResult(1, success = false)),
-        Expect(RequestVote(2, 0, 0, 0))
-      )
+      .setActions(Reply(RequestVoteResult(1, success = false)), Expect(RequestVote(2, 0, 0, 0)))
       .run()
   }
 
@@ -362,8 +356,10 @@ class ServerTest
     new CandidateEndPointChecker()
       .setProbeNum(5)
       .setActions(
-        MinorReply(RequestVoteResult(1, success = true),
-                   Some(RequestVoteResult(1, success = false))),
+        MinorReply(
+          RequestVoteResult(1, success = true),
+          Some(RequestVoteResult(1, success = false))
+        ),
         Expect(RequestVote(2, 0, 0, 0))
       )
       .run()
@@ -373,10 +369,7 @@ class ServerTest
     "current term" in {
     new CandidateEndPointChecker()
       .setProbeNum(5)
-      .setActions(
-        Reply(RequestVoteResult(2, success = true)),
-        Expect(RequestVote(3, 0, 0, 0))
-      )
+      .setActions(Reply(RequestVoteResult(2, success = true)), Expect(RequestVote(3, 0, 0, 0)))
       .run()
   }
 
@@ -402,16 +395,20 @@ class ServerTest
       .run()
   }
 
-  "Leader" should "send heartbeat to every follower every heartbeat interval" in {
+  "leader" should "send heartbeat to every follower every heartbeat interval" in {
     val tickTime = 100.millis
     new LeaderEndPointChecker()
       .setActions(
         Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
-        Rep(3,
-            Within(tickTime,
-                   tickTime * 2,
-                   Reply(AppendEntriesResult(1, success = true)),
-                   Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0))))
+        Rep(
+          3,
+          Within(
+            tickTime,
+            tickTime * 2,
+            Reply(AppendEntriesResult(1, success = true)),
+            Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0))
+          )
+        )
       )
       .run()
   }
@@ -433,11 +430,15 @@ class ServerTest
       .setProbeNum(5)
       .setActions(
         Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
-        MinorReply(AppendEntriesResult(1, success = false),
-                   Some(AppendEntriesResult(1, success = true))),
+        MinorReply(
+          AppendEntriesResult(1, success = false),
+          Some(AppendEntriesResult(1, success = true))
+        ),
         Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
-        MinorReply(AppendEntriesResult(1, success = true),
-                   Some(AppendEntriesResult(1, success = false))),
+        MinorReply(
+          AppendEntriesResult(1, success = true),
+          Some(AppendEntriesResult(1, success = false))
+        ),
         Expect(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
         Reply(AppendEntriesResult(1, success = true))
       )

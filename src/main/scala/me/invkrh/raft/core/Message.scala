@@ -5,7 +5,7 @@ import scala.util.Try
 import akka.actor.ActorRef
 
 object Message {
-  
+
   trait RaftMessage
 
   trait EventMessage extends RaftMessage
@@ -18,15 +18,15 @@ object Message {
     override def toString: String = s"$key = $value"
   }
   case class CommandResponse(success: Boolean, info: String = "")
-  
+
   case class LogEntry(term: Int, command: Command)
-  
+
   // internal RPC message
   trait RPCMessage extends RaftMessage {
     def term: Int
   }
   case class AppendEntries(term: Int,
-                           leadId: Int,
+                           leaderId: Int,
                            prevLogIndex: Int,
                            prevLogTerm: Int,
                            entries: Seq[LogEntry],
@@ -41,7 +41,7 @@ object Message {
   }
   case class AppendEntriesResult(term: Int, success: Boolean) extends RPCResult
   case class RequestVoteResult(term: Int, success: Boolean) extends RPCResult
-  
+
   case class CallBack(request: RPCMessage, responses: Seq[(ActorRef, Try[RPCResult])])
       extends RaftMessage
 }
