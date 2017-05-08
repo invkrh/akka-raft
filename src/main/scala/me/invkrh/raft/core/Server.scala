@@ -10,7 +10,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 import me.invkrh.raft.core.Exception._
-import me.invkrh.raft.core.Message.{RequestVote, StartElection, Tick, _}
+import me.invkrh.raft.core.Message._
 import me.invkrh.raft.util._
 
 object Server {
@@ -54,11 +54,11 @@ class Server(val id: Int,
   implicit val scheduler: Scheduler = system.scheduler
   override def logPrefix: String = s"[$id-$curState]"
 
-  var curTerm = 0
-  var curState: State.Value = State.Bootstrap
-  var curLeaderId: Option[Int] = None
-  var votedFor: Option[Int] = None
-  var members: Map[Int, ActorRef] = Map()
+  private var curTerm = 0
+  private var curState: State.Value = State.Bootstrap
+  private var curLeaderId: Option[Int] = None
+  private var votedFor: Option[Int] = None
+  private var members: Map[Int, ActorRef] = Map()
 
   val clientMessageCache = new MessageCache[ClientMessage]()
 
@@ -186,16 +186,15 @@ class Server(val id: Int,
         sender ! AppendEntriesResult(curTerm, success = false)
       } else if (curTerm == hb.term) {
         curState match {
-          case State.Leader => throw new Exception("Two leader detected")
+          case State.Leader =>
+            throw LeaderNotUniqueException(id, hb.leaderId)
           case State.Candidate =>
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
             becomeFollower(hb.term, hb.leaderId)
           case State.Follower =>
             curLeaderId foreach { leaderId =>
-              if (leaderId != hb.leaderId) {
-                throw new Exception("Two leader detected")
-              }
+              checkOrThrow(leaderId == hb.leaderId, LeaderNotUniqueException(id, hb.leaderId))
             }
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
@@ -239,7 +238,7 @@ class Server(val id: Int,
           sender() ! CommandResponse(success = true)
         case State.Candidate =>
           curLeaderId match {
-            case Some(_) => throw new Exception("Leader should be empty for candidate")
+            case Some(sid) => throw CandidateKnowsLeaderException(sid)
             case None => clientMessageCache.add(sender, cmd)
           }
         case State.Follower =>
@@ -258,8 +257,9 @@ class Server(val id: Int,
   }
 
   def irrelevantMsgEndPoint: Receive = {
-    case irrelevantMsg: RPCMessage =>
-      warn(s"Irrelevant message [$irrelevantMsg] received from ${sender().path}")
+    case msg: RaftMessage =>
+      warn(s"Irrelevant messages found: $msg, from ${sender.path}")
+//      throw IrrelevantMessageException(msg, sender)
   }
 
   def follower: Receive =
@@ -312,7 +312,11 @@ class Server(val id: Int,
     votedFor = None
 
     if (newLeader == -1) { // New leader is unknown
-      info(s"At term $curTerm, unknown new leader detected")
+      if (curTerm == 0) {
+        info(s"At term $curTerm, start up as follower")
+      } else {
+        info(s"At term $curTerm, unknown new leader detected")
+      }
       curLeaderId = None
     } else { // New leader is already known
       info(s"At term $curTerm, new leader $newLeader detected")

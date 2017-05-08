@@ -4,10 +4,10 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 
-import akka.actor.{ActorRef, ActorSystem, PoisonPill}
+import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, Props}
 import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
-import me.invkrh.raft.core.Exception.HeartbeatIntervalException
+import me.invkrh.raft.core.Exception.{HeartbeatIntervalException, LeaderNotUniqueException}
 import me.invkrh.raft.core.Message._
 import me.invkrh.raft.core.{Server, State}
 import me.invkrh.raft.util.UID
@@ -42,31 +42,43 @@ class ServerTest
 
   // ProbeAction
   trait ProbeAction extends Action
+
   // expect no messages
   case class ExpNoMsg() extends ProbeAction
+
   // expect message
   case class Expect(message: RaftMessage) extends ProbeAction
+
   // tell message
   case class Tell(message: RaftMessage) extends ProbeAction
+
   // reply message for ask pattern
   case class Reply(message: RaftMessage) extends ProbeAction
+
   // action happens after sleep time
   case class Delay(sleep: FiniteDuration, action: ProbeAction) extends ProbeAction
+
   // majority of the probes reply
   case class MajorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None)
       extends ProbeAction
+
   // minority of the probes reply
   case class MinorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None)
       extends ProbeAction
+
   // action finishes within the duration
   case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeAction*)
       extends ProbeAction
+
   // action repeats itself
   case class Rep(times: Int, actions: ProbeAction*) extends ProbeAction
+
   // wait for message succeed the partial func and return true
   case class FishForMsg(f: PartialFunction[Any, Boolean]) extends ProbeAction
 
   trait EndpointChecker {
+
+    // TODO: move action trait in this class, refactor
     protected var probeNum: Int = 1
     protected var actions: List[ProbeAction] = List()
     protected var id = 42
@@ -101,10 +113,6 @@ class ServerTest
       this.actions = actions.toList
       this
     }
-
-    val name: String = s"srv-$id-${UID()}" // use random name
-    lazy val probes: Array[TestProbe] = Array.fill(probeNum)(TestProbe("follower"))
-    lazy val server: ActorRef = Server.run(id, electionTime, electionTime, tickTime, name)
 
     def checkActions(actions: Seq[Action]): Unit = {
       actions foreach {
@@ -153,14 +161,26 @@ class ServerTest
       }
     }
 
+    val probes: Array[TestProbe] = Array.fill(probeNum)(TestProbe("follower"))
+    val supervisor: ActorRef =
+      system.actorOf(
+        Props(new ServerSupervisor(s"svr-$id", probes.map(_.ref): _*)),
+        s"supervisor-${UID()}"
+      )
+    val server: ActorRef = {
+      supervisor ! Server.props(id, electionTime, electionTime, tickTime)
+      expectMsgType[ActorRef]
+    }
+
     def run(): Unit = {
-      // Init server and also enforce lazy val
-      val dict = probes.zipWithIndex.map { case (p, i) => (i + 1, p.ref) }.toMap updated (id, server)
+      val dict = probes.zipWithIndex.map {
+        case (p, i) => (i + 1, p.ref)
+      }.toMap updated (id, server)
       server ! Init(dict)
       clusterSetup()
       checkActions(actions)
       probes foreach (_.ref ! PoisonPill)
-      stopServer(server)
+      stopServer(supervisor) // server is a child of supervisor
     }
   }
 
@@ -180,6 +200,19 @@ class ServerTest
         p expectMsg RequestVote(1, id, 0, 0)
         p.reply(RequestVoteResult(1, success = true))
       }
+    }
+  }
+
+  import akka.actor.SupervisorStrategy._
+
+  class ServerSupervisor(serverName: String, probes: ActorRef*) extends Actor {
+    override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy() {
+      case thr: Throwable =>
+        probes foreach { _ ! thr }
+        Restart // or make it configurable/controllable during the test
+    }
+    def receive: PartialFunction[Any, Unit] = {
+      case p: Props => sender ! context.actorOf(p, serverName)
     }
   }
 
@@ -287,7 +320,7 @@ class ServerTest
       )
       .run()
   }
-  
+
   it should "resend command to leader if leader is elected" in {
     new FollowerEndPointChecker()
       .setActions(
@@ -315,18 +348,8 @@ class ServerTest
       )
       .run()
   }
-  
-  it should "return server status after receive GetStatus request" in {
-    val checker = new FollowerEndPointChecker()
-    checker
-      .setActions(
-      Tell(GetStatus), // reuse probe as client
-      Expect(Status(checker.getId, 0, State.Follower, None))
-    )
-      .run()
-  }
-  
-  it should "return server status after receive GetStatus request af" in {
+
+  it should "return server status after receiving GetStatus request" in {
     val checker = new FollowerEndPointChecker()
     val term = 10
     val leaderId = 1
@@ -336,6 +359,19 @@ class ServerTest
         Expect(AppendEntriesResult(term, success = true)),
         Tell(GetStatus),
         Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
+      )
+      .run()
+  }
+
+  it should "never receive heartbeat from another leader" in {
+    val term = 10
+    val leaderId = 1
+    new FollowerEndPointChecker()
+      .setActions(
+        Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(term, success = true)),
+        Tell(AppendEntries(term, leaderId + 1, 0, 0, Seq[LogEntry](), 0)),
+        FishForMsg { case _: LeaderNotUniqueException => true }
       )
       .run()
   }
@@ -455,7 +491,7 @@ class ServerTest
       )
       .run()
   }
-  
+
   it should "return server status after receive GetStatus request af" in {
     val checker = new CandidateEndPointChecker()
     val term = 10
@@ -549,7 +585,7 @@ class ServerTest
       )
       .run()
   }
-  
+
   it should "return server status after receive GetStatus request af" in {
     val checker = new LeaderEndPointChecker()
     val term = 10
@@ -562,6 +598,24 @@ class ServerTest
         Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
       )
       .run()
+  }
+
+  it should "never receive an AppendEntries RPC with the same term" in {
+    val checker = new LeaderEndPointChecker()
+    checker
+      .setActions(
+        Expect(AppendEntries(1, checker.getId, 0, 0, List(), 0)),
+        Reply(AppendEntriesResult(1, success = true)),
+        Tell(AppendEntries(1, 2, 0, 0, Seq[LogEntry](), 0)),
+        FishForMsg { case _: LeaderNotUniqueException => true }
+      )
+      .run()
+  }
+
+  //TODO: add more exception test
+  it should "asdf" in {
+    val res = ("raft" + "akka")
+    println(res)
   }
 
 }
