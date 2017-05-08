@@ -1,16 +1,14 @@
 package me.invkrh.raft
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 
-import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, Props}
-import akka.pattern.{AskTimeoutException, gracefulStop}
-import akka.testkit.{ImplicitSender, TestKit, TestProbe}
+import akka.actor.{ActorSystem, PoisonPill}
+import akka.testkit.{ImplicitSender, TestKit}
 import me.invkrh.raft.core.Exception.{HeartbeatIntervalException, LeaderNotUniqueException}
 import me.invkrh.raft.core.Message._
 import me.invkrh.raft.core.{Server, State}
-import me.invkrh.raft.util.UID
+import me.invkrh.raft.kit._
 import org.scalatest._
 
 class ServerTest
@@ -18,7 +16,7 @@ class ServerTest
     with ImplicitSender
     with FlatSpecLike
     with BeforeAndAfterAll
-    with BeforeAndAfterEach {
+    with BeforeAndAfterEach { self =>
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
@@ -26,195 +24,7 @@ class ServerTest
 
   override def afterEach(): Unit = {}
 
-  def stopServer(serverRef: ActorRef): Unit = {
-    try {
-      val stopped: Future[Boolean] = gracefulStop(serverRef, 5 seconds)
-      Await.result(stopped, 6 seconds)
-    } catch {
-      case e: AskTimeoutException ⇒ throw e
-    }
-  }
-
-  trait Action
-
-  // Client Action
-  case class ClientAction(f: () => Unit) extends Action
-
-  // ProbeAction
-  trait ProbeAction extends Action
-
-  // expect no messages
-  case class ExpNoMsg() extends ProbeAction
-
-  // expect message
-  case class Expect(message: RaftMessage) extends ProbeAction
-
-  // tell message
-  case class Tell(message: RaftMessage) extends ProbeAction
-
-  // reply message for ask pattern
-  case class Reply(message: RaftMessage) extends ProbeAction
-
-  // action happens after sleep time
-  case class Delay(sleep: FiniteDuration, action: ProbeAction) extends ProbeAction
-
-  // majority of the probes reply
-  case class MajorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None)
-      extends ProbeAction
-
-  // minority of the probes reply
-  case class MinorReply(message: RaftMessage, msgForOthers: Option[RaftMessage] = None)
-      extends ProbeAction
-
-  // action finishes within the duration
-  case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeAction*)
-      extends ProbeAction
-
-  // action repeats itself
-  case class Rep(times: Int, actions: ProbeAction*) extends ProbeAction
-
-  // wait for message succeed the partial func and return true
-  case class FishForMsg(f: PartialFunction[Any, Boolean]) extends ProbeAction
-
-  trait EndpointChecker {
-
-    // TODO: move action trait in this class, refactor
-    protected var probeNum: Int = 1
-    protected var actions: List[ProbeAction] = List()
-    protected var id = 42
-    protected var electionTime: FiniteDuration = 150 millis
-    protected var tickTime: FiniteDuration = 100 millis
-
-    protected def clusterSetup(): Unit
-
-    def getId: Int = id
-
-    def setId(id: Int): this.type = {
-      this.id = id
-      this
-    }
-
-    def setElectionTime(electionTime: FiniteDuration): this.type = {
-      this.electionTime = electionTime
-      this
-    }
-
-    def setTickTime(tickTime: FiniteDuration): this.type = {
-      this.tickTime = tickTime
-      this
-    }
-
-    def setProbeNum(probeNum: Int): this.type = {
-      this.probeNum = probeNum
-      this
-    }
-
-    def setActions(actions: ProbeAction*): this.type = {
-      this.actions = actions.toList
-      this
-    }
-
-    def checkActions(actions: Seq[Action]): Unit = {
-      actions foreach {
-        case ClientAction(f) => f()
-        case ExpNoMsg() => probes foreach (_ expectNoMsg)
-        case Delay(sleep, action) =>
-          Thread.sleep(sleep.toMillis)
-          checkActions(Seq(action))
-        case Expect(msg) =>
-          probes foreach (_.expectMsg(electionTime + tickTime, msg))
-        case Within(min, max, actions @ _ *) =>
-          // loose time range in case time assertion is not accurate
-          val minMS = min.toMillis
-          val maxMS = max.toMillis
-          within(minMS * 0.9 millis, maxMS * 1.1 millis) {
-            checkActions(actions)
-          }
-        case Tell(msg) =>
-          // it does not work with ask pattern in which the sender is not server,
-          // but a actor under /temp path
-          probes foreach (p => server.tell(msg, p.ref))
-        case Reply(msg) =>
-          // if msg is from ask pattern, reply method must be used,
-          // or there will be some AskTimeoutException
-          probes foreach (_ reply msg)
-        case MajorReply(msg, optMsg) =>
-          val maj = probes.length / 2 + 1
-          probes.take(maj) foreach (_ reply msg)
-          optMsg match {
-            case Some(other) => probes.drop(maj) foreach (_ reply other)
-            case None =>
-          }
-        case MinorReply(msg, optMsg) =>
-          val min = probes.length / 2 - 1
-          probes.take(min) foreach (_ reply msg)
-          optMsg match {
-            case Some(other) => probes.drop(min) foreach (_ reply other)
-            case None =>
-          }
-        case Rep(times, actions @ _ *) =>
-          (0 until times).foreach { _ =>
-            checkActions(actions)
-          }
-        case FishForMsg(func) =>
-          probes foreach { _.fishForMessage(10 seconds)(func) }
-      }
-    }
-
-    val probes: Array[TestProbe] = Array.fill(probeNum)(TestProbe("follower"))
-    val supervisor: ActorRef =
-      system.actorOf(
-        Props(new ServerSupervisor(s"svr-$id", probes.map(_.ref): _*)),
-        s"supervisor-${UID()}"
-      )
-    val server: ActorRef = {
-      supervisor ! Server.props(id, electionTime, electionTime, tickTime)
-      expectMsgType[ActorRef]
-    }
-
-    def run(): Unit = {
-      val dict = probes.zipWithIndex.map {
-        case (p, i) => (i + 1, p.ref)
-      }.toMap updated (id, server)
-      server ! Init(dict)
-      clusterSetup()
-      checkActions(actions)
-      probes foreach (_.ref ! PoisonPill)
-      stopServer(supervisor) // server is a child of supervisor
-    }
-  }
-
-  class FollowerEndPointChecker() extends EndpointChecker {
-    override def clusterSetup(): Unit = {}
-  }
-
-  class CandidateEndPointChecker() extends EndpointChecker {
-    override def clusterSetup(): Unit = {
-      probes.foreach(_ expectMsg RequestVote(1, id, 0, 0))
-    }
-  }
-
-  class LeaderEndPointChecker() extends EndpointChecker {
-    override def clusterSetup(): Unit = {
-      probes foreach { p =>
-        p expectMsg RequestVote(1, id, 0, 0)
-        p.reply(RequestVoteResult(1, success = true))
-      }
-    }
-  }
-
-  import akka.actor.SupervisorStrategy._
-
-  class ServerSupervisor(serverName: String, probes: ActorRef*) extends Actor {
-    override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy() {
-      case thr: Throwable =>
-        probes foreach { _ ! thr }
-        Restart // or make it configurable/controllable during the test
-    }
-    def receive: PartialFunction[Any, Unit] = {
-      case p: Props => sender ! context.actorOf(p, serverName)
-    }
-  }
+  implicit val tk: TestKit = this
 
   /////////////////////////////////////////////////
   //  Leader Election
@@ -337,7 +147,7 @@ class ServerTest
   it should "respond command received at term = 0 (right after init) when it becomes leader" in {
     val checker = new FollowerEndPointChecker()
     checker
-      .setElectionTime(1 seconds) // long election time to keep server in initialized follower state
+      .setElectionTime(1 seconds) // keep server in initialized follower state longer
       .setActions(
         Tell(Command("x", 1)), // reuse probe as client
         Tell(Command("y", 2)), // reuse probe as client

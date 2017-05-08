@@ -61,9 +61,7 @@ class Server(val id: Int,
   private var members: Map[Int, ActorRef] = Map()
 
   val clientMessageCache = new MessageCache[ClientMessage]()
-
-  val electionTimer =
-    new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
+  val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
   val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
   val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
 
@@ -89,6 +87,7 @@ class Server(val id: Int,
   }
 
   // TODO: retries is a conf ?
+  // rethink of the ask pattern, queue with timeout
   def distributeRPC(msg: RPCMessage, retries: Int = 1): Unit = {
     implicit val timeout = Timeout(tickTime / retries)
     Future
@@ -238,7 +237,8 @@ class Server(val id: Int,
           sender() ! CommandResponse(success = true)
         case State.Candidate =>
           curLeaderId match {
-            case Some(sid) => throw CandidateKnowsLeaderException(sid)
+            case Some(sid) => // unreachable check, just in case
+              throw CandidateHasLeaderException(sid)
             case None => clientMessageCache.add(sender, cmd)
           }
         case State.Follower =>

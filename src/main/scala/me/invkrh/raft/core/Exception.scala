@@ -20,7 +20,7 @@ object Exception {
   final case class LeaderNotUniqueException(local: Int, received: Int)
       extends RuntimeException(s"Two leader detected: local -> $local, received -> $received")
 
-  final case class CandidateKnowsLeaderException(leaderID: Int)
+  final case class CandidateHasLeaderException(leaderID: Int)
       extends RuntimeException(s"Leader should be empty, but $leaderID found")
 
 //  final case class IrrelevantMessageException(msg: RaftMessage, sender: ActorRef)
