@@ -1,5 +1,6 @@
 package me.invkrh.raft.kit
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
@@ -8,7 +9,7 @@ import akka.actor.SupervisorStrategy._
 import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, Props}
 import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.TestProbe
-import me.invkrh.raft.core.Message.{Init, RequestVote, RequestVoteResult}
+import me.invkrh.raft.core.Message.{AppendEntries, Init, LogEntry, RequestVote, RequestVoteResult}
 import me.invkrh.raft.core.Server
 import me.invkrh.raft.util.UID
 
@@ -21,7 +22,7 @@ sealed trait EndpointChecker {
   protected var electionTime: FiniteDuration = 150 millis
   protected var tickTime: FiniteDuration = 100 millis
 
-  protected def clusterSetup(): Unit
+  protected def preActions(): Unit
 
   def getId: Int = id
 
@@ -50,18 +51,6 @@ sealed trait EndpointChecker {
     this
   }
 
-  val probes: Array[TestProbe] = Array.fill(probeNum)(TestProbe("follower"))
-  val supervisor: ActorRef =
-    system.actorOf(
-      Props(new ServerSupervisor(s"svr-$id", probes.map(_.ref): _*)),
-      s"supervisor-${UID()}"
-    )
-  val server: ActorRef = {
-    val pb = TestProbe()
-    supervisor.tell(Server.props(id, electionTime, electionTime, tickTime), pb.ref)
-    pb.expectMsgType[ActorRef]
-  }
-
   def stopServer(serverRef: ActorRef): Unit = {
     try {
       val stopped: Future[Boolean] = gracefulStop(serverRef, 5 seconds)
@@ -72,11 +61,22 @@ sealed trait EndpointChecker {
   }
 
   def run(): Unit = {
+    val probes: List[TestProbe] = List.fill(probeNum)(TestProbe("follower"))
+    val supervisor: ActorRef =
+      system.actorOf(
+        Props(new ServerSupervisor(s"svr-$id", probes.map(_.ref): _*)),
+        s"supervisor-${UID()}"
+      )
+    val server: ActorRef = {
+      val pb = TestProbe()
+      supervisor.tell(Server.props(id, electionTime, electionTime, tickTime), pb.ref)
+      pb.expectMsgType[ActorRef]
+    }
     val dict = probes.zipWithIndex.map {
       case (p, i) => (i + 1, p.ref)
     }.toMap updated (id, server)
     server ! Init(dict)
-    clusterSetup()
+    preActions()
     actions foreach { _.execute(server, probes) }
     probes foreach (_.ref ! PoisonPill)
     stopServer(supervisor) // server is a child of supervisor
@@ -95,20 +95,19 @@ class ServerSupervisor(serverName: String, probes: ActorRef*) extends Actor {
 }
 
 class FollowerEndPointChecker(implicit val system: ActorSystem) extends EndpointChecker {
-  override def clusterSetup(): Unit = {}
+  override protected def preActions(): Unit = {}
 }
 
 class CandidateEndPointChecker(implicit val system: ActorSystem) extends EndpointChecker {
-  override def clusterSetup(): Unit = {
-    probes.foreach(_ expectMsg RequestVote(1, id, 0, 0))
+  override protected def preActions(): Unit = {
+    actions = Expect(RequestVote(1, id, 0, 0)) :: actions
   }
 }
 
 class LeaderEndPointChecker(implicit val system: ActorSystem) extends EndpointChecker {
-  override def clusterSetup(): Unit = {
-    probes foreach { p =>
-      p expectMsg RequestVote(1, id, 0, 0)
-      p.reply(RequestVoteResult(1, success = true))
-    }
+  override protected def preActions(): Unit = {
+    actions = Expect(RequestVote(1, id, 0, 0)) ::
+      Reply(RequestVoteResult(1, success = true)) ::
+      Expect(AppendEntries(1, id, 0, 0, Seq[LogEntry](), 0)) :: actions
   }
 }

@@ -3,7 +3,7 @@ package me.invkrh.raft.kit
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
 import me.invkrh.raft.core.Message.RaftMessage
 
@@ -26,13 +26,6 @@ case class Tell(msg: RaftMessage) extends ProbeCheck {
 case class Reply(msg: RaftMessage) extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     probes foreach { _ reply msg }
-  }
-}
-
-case class Delay(sleep: FiniteDuration, action: ProbeCheck) extends ProbeCheck {
-  override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
-    Thread.sleep(sleep.toMillis)
-    action.execute(server, probes)
   }
 }
 
@@ -60,13 +53,21 @@ case class MajorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None
   }
 }
 
+case class Delay(sleep: FiniteDuration, action: ProbeCheck) extends ProbeCheck {
+  override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
+    Thread.sleep(sleep.toMillis)
+    action.execute(server, probes)
+  }
+}
+
 case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeCheck*)(
-  implicit tk: TestKit
+  implicit system: ActorSystem
 ) extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     val minMS = min.toMillis
     val maxMS = max.toMillis
-    tk.within(minMS * 0.9 millis, maxMS * 1.1 millis) {
+    val pb = TestProbe()
+    pb.within(minMS * 0.9 millis, maxMS * 1.1 millis) {
       actions foreach { _.execute(server, probes) }
     }
   }

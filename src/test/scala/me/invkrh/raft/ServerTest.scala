@@ -24,8 +24,6 @@ class ServerTest
 
   override def afterEach(): Unit = {}
 
-  implicit val tk: TestKit = this
-
   /////////////////////////////////////////////////
   //  Leader Election
   /////////////////////////////////////////////////
@@ -302,7 +300,7 @@ class ServerTest
       .run()
   }
 
-  it should "return server status after receive GetStatus request af" in {
+  it should "return server status after receive GetStatus request" in {
     val checker = new CandidateEndPointChecker()
     val term = 10
     val leaderId = 1
@@ -317,16 +315,19 @@ class ServerTest
   }
 
   "leader" should "send heartbeat to every follower every heartbeat interval" in {
-    val tickTime = 100.millis
+    val tickTime = 200.millis
     val checker = new LeaderEndPointChecker()
     checker
+      .setTickTime(tickTime)
+      .setElectionTime(tickTime * 2)
       .setActions(
-        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         Rep(
           3,
           Within(
             tickTime,
             tickTime * 2,
+            Reply(AppendEntriesResult(1, success = true)),
+            Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
             Reply(AppendEntriesResult(1, success = true)),
             Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0))
           )
@@ -337,12 +338,13 @@ class ServerTest
 
   it should "become follower if it receives a RequestVote with term larger than " +
     "its current term" in {
+    val term = 10
     new LeaderEndPointChecker()
       .setActions(
-        Tell(RequestVote(10, 0, 0, 0)),
-        Expect(RequestVoteResult(10, success = true)),
-        Tell(AppendEntries(10, 0, 0, 0, Seq[LogEntry](), 0)),
-        Expect(AppendEntriesResult(10, success = true))
+        Tell(RequestVote(term, 0, 0, 0)),
+        Expect(RequestVoteResult(term, success = true)),
+        Tell(AppendEntries(term, 0, 0, 0, Seq[LogEntry](), 0)),
+        Expect(AppendEntriesResult(term, success = true))
       )
       .run()
   }
@@ -353,7 +355,6 @@ class ServerTest
     checker
       .setProbeNum(5)
       .setActions(
-        Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
         Reply(AppendEntriesResult(2, success = true)),
         Expect(RequestVote(3, checker.getId, 0, 0))
       )
@@ -396,25 +397,19 @@ class ServerTest
       .run()
   }
 
-  it should "return server status after receive GetStatus request af" in {
+  it should "return server status after receive GetStatus request" in {
     val checker = new LeaderEndPointChecker()
-    val term = 10
-    val leaderId = 1
     checker
       .setActions(
-        Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
-        Expect(AppendEntriesResult(term, success = true)),
         Tell(GetStatus),
-        Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
+        Expect(Status(checker.getId, 1, State.Leader, Some(checker.getId)))
       )
       .run()
   }
 
   it should "never receive an AppendEntries RPC with the same term" in {
-    val checker = new LeaderEndPointChecker()
-    checker
+    new LeaderEndPointChecker()
       .setActions(
-        Expect(AppendEntries(1, checker.getId, 0, 0, List(), 0)),
         Reply(AppendEntriesResult(1, success = true)),
         Tell(AppendEntries(1, 2, 0, 0, Seq[LogEntry](), 0)),
         FishForMsg { case _: LeaderNotUniqueException => true }
