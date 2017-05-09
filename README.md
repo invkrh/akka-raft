@@ -4,9 +4,18 @@
 
 An implementation of raft consensus algorithm based on akka
 
-## Lesson learned:
+## Features:
+* [x] Leader election
+* [ ] Log replication
+* [ ] Cluster membership changes
+* [ ] Log compaction
+* [ ] Client interaction
+* [ ] Scripts for deployment and system administration
 
-### Stop actor
+## Lessons learned:
+
+### Akka
+#### Stop actor
 Both stop and PoisonPill will terminate the actor and stop the message queue.
 They will cause the actor to cease processing messages, send a stop call to all
 its children, wait for them to terminate, then call its postStop hook.
@@ -18,10 +27,10 @@ with all others discarded. When sending a PoisonPill, this is simply another mes
 in the queue, so the sequence will start when the PoisonPill is received.
 All messages that are ahead of it in the queue will be processed first.
 
-### Ask pattern ActorRef
+#### Ask pattern ActorRef
 Actor path under /temp is the guardian for all short-lived system-created actors,
 
-### scala Future usage
+#### Scala Future usage
 When using future callbacks, such as onComplete, onSuccess, and onFailure, inside actors you
 need to carefully avoid closing over the containing actor’s reference, i.e. do not call
 methods or access mutable state on the enclosing actor from within the callback. This would
