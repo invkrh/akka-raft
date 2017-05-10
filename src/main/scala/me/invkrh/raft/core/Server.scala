@@ -70,7 +70,7 @@ class Server(val id: Int,
   override def preStart(): Unit = {}
 
   override def postStop(): Unit = {
-    info(s"Server $id stops and cancel all timer scheduled tasks")
+    logInfo(s"Server $id stops and cancel all timer scheduled tasks")
     electionTimer.stop()
     heartBeatTimer.stop()
   }
@@ -81,7 +81,7 @@ class Server(val id: Int,
                retryMsg: String = ""): Future[T] = {
     ft recoverWith {
       case e if retries > 0 =>
-        warn(retryMsg + " current error: " + e)
+        logWarn(retryMsg + " current error: " + e)
         after(delay, scheduler)(retry(ft, delay, retries - 1, retryMsg))
     }
   }
@@ -117,10 +117,10 @@ class Server(val id: Int,
         tryRes match {
           case Success(res) =>
             if (res.term > curTerm) {
-              info(s"New leader is detected by receiving $res from ${follower.path}")
+              logInfo(s"New leader is detected by receiving $res from ${follower.path}")
               (Math.max(curMaxTerm, res.term), count)
             } else if (res.term == curTerm) {
-              info(s"Receive $res from ${follower.path}")
+              logInfo(s"Receive $res from ${follower.path}")
               if (res.success) {
                 (curMaxTerm, count + 1)
               } else {
@@ -133,7 +133,7 @@ class Server(val id: Int,
               )
             }
           case Failure(e) =>
-            warn(s"Can not get ${callback.request} from ${follower.path} with error: " + e)
+            logWarn(s"Can not get ${callback.request} from ${follower.path} with error: " + e)
             (curMaxTerm, count)
 
         }
@@ -144,13 +144,13 @@ class Server(val id: Int,
       if (validReplyCount > members.size / 2) {
         majorityHandler(validReplyCount)
       } else {
-        info(
+        logInfo(
           s"Majority is not reached ($validReplyCount / ${members.size}), " +
             s"a new round will be launched"
         )
       }
     }
-    info(s"=== end of processing ${callback.request} ===")
+    logInfo(s"=== end of processing ${callback.request} ===")
   }
 
   def issueVoteRequest(): Unit = {
@@ -162,7 +162,7 @@ class Server(val id: Int,
   }
 
   def processClientRequest(cmd: Command): Unit = {
-    info("Client command received: " + cmd)
+    logInfo("Client command received: " + cmd)
   }
 
   def adminEndpoint: Receive = {
@@ -258,7 +258,7 @@ class Server(val id: Int,
 
   def irrelevantMsgEndPoint: Receive = {
     case msg: RaftMessage =>
-      warn(s"Irrelevant messages found: $msg, from ${sender.path}")
+      logWarn(s"Irrelevant messages found: $msg, from ${sender.path}")
 //      throw IrrelevantMessageException(msg, sender)
   }
 
@@ -272,7 +272,7 @@ class Server(val id: Int,
 
   def candidate: Receive =
     callBackEndPoint { majCnt =>
-      info(
+      logInfo(
         s"Election for term $curTerm is ended since majority is reached " +
           s"($majCnt / ${members.size})"
       )
@@ -287,7 +287,7 @@ class Server(val id: Int,
 
   def leader: Receive =
     callBackEndPoint { majCnt =>
-      info(
+      logInfo(
         s"Heartbeat for term $curTerm is ended since majority is reached " +
           s"($majCnt / ${members.size}), committing logs"
       )
@@ -301,7 +301,7 @@ class Server(val id: Int,
 
   override def receive: Receive = {
     case Init(memberDict) =>
-      info(s"Server $id initialized")
+      logInfo(s"Server $id initialized")
       members = memberDict
       becomeFollower(curTerm)
   }
@@ -313,13 +313,13 @@ class Server(val id: Int,
 
     if (newLeader == -1) { // New leader is unknown
       if (curTerm == 0) {
-        info(s"At term $curTerm, start up as follower")
+        logInfo(s"At term $curTerm, start up as follower")
       } else {
-        info(s"At term $curTerm, unknown new leader detected")
+        logInfo(s"At term $curTerm, unknown new leader detected")
       }
       curLeaderId = None
     } else { // New leader is already known
-      info(s"At term $curTerm, new leader $newLeader detected")
+      logInfo(s"At term $curTerm, new leader $newLeader detected")
       curLeaderId = Some(newLeader)
       for {
         leaderId <- curLeaderId
@@ -338,7 +338,7 @@ class Server(val id: Int,
     curState = State.Candidate
     votedFor = Some(id)
     curLeaderId = None
-    info(s"Election for term $curTerm started, server $id becomes candidate")
+    logInfo(s"Election for term $curTerm started, server $id becomes candidate")
     become(candidate)
     issueVoteRequest()
     electionTimer.restart()
@@ -349,7 +349,7 @@ class Server(val id: Int,
     curState = State.Leader
     curLeaderId = Some(id)
     votedFor = None
-    info(s"Server $id becomes leader")
+    logInfo(s"Server $id becomes leader")
     become(leader)
     clientMessageCache.flushTo(self)
     electionTimer.stop()
