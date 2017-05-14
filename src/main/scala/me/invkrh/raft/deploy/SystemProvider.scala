@@ -18,7 +18,7 @@ trait SystemProvider extends Logging {
   }
 
   // System is heavy, created as needed
-  def createSystem(): ActorSystem = {
+  lazy val system: ActorSystem = {
     val config = Map(
       "akka.actor.provider" -> "remote",
       "akka.remote.netty.tcp.hostname" -> sysHostName,
@@ -31,5 +31,4 @@ trait SystemProvider extends Logging {
     }
     sys
   }
-
 }
