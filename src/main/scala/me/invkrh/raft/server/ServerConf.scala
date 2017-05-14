@@ -8,13 +8,14 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import com.typesafe.config.{Config, ConfigFactory}
+import me.invkrh.raft.util.ServerAddress
 
 case class ServerConf(id: Int,
                       minElectionTime: FiniteDuration,
                       maxElectionTime: FiniteDuration,
                       tickTime: FiniteDuration,
-                      lsnHostName: String,
-                      lsnPort: Int)
+                      host: String,
+                      port: Int)
 
 object ServerConf {
 
@@ -43,13 +44,7 @@ object ServerConf {
     val minElectionTime = config.getInt("election.timeout.min.ms").millis
     val maxElectionTime = config.getInt("election.timeout.max.ms").millis
     val tickTime = config.getInt("heartbeat.interval.ms").millis
-    // TODO: refactor URL check
-    val (lsnHostName, lsnPort) = try {
-      val url = new URL("http://" + config.getString("listener"))
-      (url.getHost, url.getPort)
-    } catch {
-      case _: Exception => throw new IllegalArgumentException("Listener is malformed")
-    }
-    ServerConf(id, minElectionTime, maxElectionTime, tickTime, lsnHostName, lsnPort)
+    val listener = ServerAddress(config.getString("listener"))
+    ServerConf(id, minElectionTime, maxElectionTime, tickTime, listener.host, listener.port)
   }
 }

@@ -5,7 +5,7 @@ import java.nio.file.Files
 
 import me.invkrh.raft.deploy.SystemProvider
 import me.invkrh.raft.server.{Server, ServerConf}
-import me.invkrh.raft.util.Listener
+import me.invkrh.raft.util.ServerAddress
 
 class ServerStart(serverConf: ServerConf) extends SystemProvider {
   override def sysName: String = raftSystemName

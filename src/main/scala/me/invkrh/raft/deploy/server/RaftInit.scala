@@ -7,7 +7,7 @@ import scala.collection.JavaConverters._
 import scala.language.postfixOps
 
 import me.invkrh.raft.deploy.SystemProvider
-import me.invkrh.raft.util.Listener
+import me.invkrh.raft.util.ServerAddress
 
 class RaftInit(members: Seq[String]) extends SystemProvider {
   override def sysPort: Int = 6000
@@ -38,7 +38,7 @@ object RaftInit {
 
   def loadServerPaths(memberFile: File): Seq[String] = {
     Files.readAllLines(memberFile.toPath).asScala.map { addr =>
-      Listener(addr)
+      ServerAddress(addr)
       s"akka.tcp://$raftSystemName@$addr/user/$raftServerName"
     }
   }
