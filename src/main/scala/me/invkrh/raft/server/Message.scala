@@ -1,4 +1,4 @@
-package me.invkrh.raft.core
+package me.invkrh.raft.server
 
 import scala.util.Try
 
@@ -12,6 +12,7 @@ object Message {
   trait AdminMessage extends RaftMessage
   case class Init(memberDict: Map[Int, ActorRef]) extends AdminMessage
   case object GetStatus extends AdminMessage
+  case object Shutdown extends AdminMessage
   case class Status(serverID: Int, term: Int, state: State.Value, leader: Option[Int])
       extends AdminMessage
 

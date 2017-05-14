@@ -1,7 +1,7 @@
-package me.invkrh.raft.core
+package me.invkrh.raft.server
 
 import akka.actor.ActorRef
-import me.invkrh.raft.core.Message.RaftMessage
+import me.invkrh.raft.server.Message.RaftMessage
 
 object Exception {
 

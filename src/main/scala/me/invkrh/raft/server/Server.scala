@@ -1,4 +1,4 @@
-package me.invkrh.raft.core
+package me.invkrh.raft.server
 
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
@@ -9,8 +9,8 @@ import scala.util.{Failure, Success}
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
-import me.invkrh.raft.core.Exception._
-import me.invkrh.raft.core.Message._
+import me.invkrh.raft.server.Exception._
+import me.invkrh.raft.server.Message._
 import me.invkrh.raft.util._
 
 object Server {
@@ -51,21 +51,22 @@ class Server(val id: Int,
     this(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
 
   import context._
+
   implicit val scheduler: Scheduler = system.scheduler
-  override def logPrefix: String = s"[$id-$curState]"
 
   private var curTerm = 0
+
   private var curState: State.Value = State.Bootstrap
   private var curLeaderId: Option[Int] = None
   private var votedFor: Option[Int] = None
   private var members: Map[Int, ActorRef] = Map()
-
   val clientMessageCache = new MessageCache[ClientMessage]()
+
   val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
   val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
   val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
 
-  // TODO: Member Management problem, member is added one by one
+  override def logPrefix: String = s"[$id-$curState]"
 
   override def preStart(): Unit = {}
 
@@ -87,7 +88,8 @@ class Server(val id: Int,
   }
 
   // TODO: retries is a conf ?
-  // rethink of the ask pattern, queue with timeout
+  // TODO: rethink of the ask pattern, queue with timeout
+  // TODO: use router
   def distributeRPC(msg: RPCMessage, retries: Int = 1): Unit = {
     implicit val timeout = Timeout(tickTime / retries)
     Future
@@ -168,6 +170,7 @@ class Server(val id: Int,
   def adminEndpoint: Receive = {
     case GetStatus =>
       sender ! Status(id, curTerm, curState, curLeaderId)
+    case Shutdown => context.system.terminate()
     // TODO: Add more admin endpoint
   }
 
@@ -299,12 +302,14 @@ class Server(val id: Int,
       adminEndpoint orElse
       irrelevantMsgEndPoint
 
-  override def receive: Receive = {
-    case Init(memberDict) =>
-      logInfo(s"Server $id initialized")
-      members = memberDict
-      becomeFollower(curTerm)
-  }
+  // TODO: Member Management problem, member is added one by one
+  override def receive: Receive =
+    adminEndpoint orElse {
+      case Init(memberDict) =>
+        logInfo(s"Server $id initialized")
+        members = memberDict
+        becomeFollower(curTerm)
+    }
 
   def becomeFollower(newTerm: Int, newLeader: Int = -1): Unit = {
     curTerm = newTerm

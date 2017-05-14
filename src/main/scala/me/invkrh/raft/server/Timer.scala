@@ -1,4 +1,4 @@
-package me.invkrh.raft.core
+package me.invkrh.raft.server
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -6,7 +6,7 @@ import scala.language.postfixOps
 import scala.util.Random
 
 import akka.actor.{ActorRef, Cancellable, Scheduler}
-import me.invkrh.raft.core.Message._
+import me.invkrh.raft.server.Message._
 
 trait Timer {
   var cancellable: Cancellable = _
@@ -30,9 +30,9 @@ class FixedTimer(duration: FiniteDuration, event: EventMessage)(implicit schedul
   }
 }
 
-class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: EventMessage)(
-  implicit scheduler: Scheduler,
-  target: ActorRef)
+class RandomizedTimer(min: FiniteDuration,
+                      max: FiniteDuration,
+                      event: EventMessage)(implicit scheduler: Scheduler, target: ActorRef)
     extends Timer {
   def start(): Unit = {
     val rd = min.toMillis + Random.nextInt((max.toMillis - min.toMillis + 1).toInt)
