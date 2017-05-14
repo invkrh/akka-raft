@@ -1,14 +1,13 @@
-package me.invkrh.raft
+package me.invkrh.raft.server
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.{ActorSystem, PoisonPill}
 import akka.testkit.{ImplicitSender, TestKit}
-import me.invkrh.raft.core.Exception.{HeartbeatIntervalException, LeaderNotUniqueException}
-import me.invkrh.raft.core.Message._
-import me.invkrh.raft.core.{Server, State}
 import me.invkrh.raft.kit._
+import me.invkrh.raft.server.Exception.{HeartbeatIntervalException, LeaderNotUniqueException}
+import me.invkrh.raft.server.Message._
 import org.scalatest._
 
 class ServerTest

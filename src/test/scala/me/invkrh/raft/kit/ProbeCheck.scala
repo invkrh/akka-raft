@@ -5,7 +5,7 @@ import scala.language.postfixOps
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
-import me.invkrh.raft.core.Message.RaftMessage
+import me.invkrh.raft.server.Message.RaftMessage
 
 sealed trait ProbeCheck {
   def execute(server: ActorRef, probes: Seq[TestProbe]): Unit

@@ -1,4 +1,4 @@
-package me.invkrh.raft
+package me.invkrh.raft.server
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -8,8 +8,7 @@ import akka.actor.ActorSystem
 import akka.pattern.ask
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
-import me.invkrh.raft.core.Message.{Command, CommandResponse, Init}
-import me.invkrh.raft.core.Server
+import me.invkrh.raft.server.Message.{Command, CommandResponse, Init}
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FlatSpecLike}
 
 class ClusterTest
@@ -34,11 +33,11 @@ class ClusterTest
         i -> ref
       }
       .toMap
-    
+
     memberDict foreach {
       case (_, serverRef) => serverRef ! Init(memberDict)
     }
-    
+
     implicit val timeout = Timeout(5 seconds)
     val future = (memberDict.apply(1) ? Command("x", 1)).mapTo[CommandResponse]
     assertResult(CommandResponse(success = true)) {

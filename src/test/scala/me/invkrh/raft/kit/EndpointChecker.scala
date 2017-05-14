@@ -9,8 +9,14 @@ import akka.actor.SupervisorStrategy._
 import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, Props}
 import akka.pattern.{AskTimeoutException, gracefulStop}
 import akka.testkit.TestProbe
-import me.invkrh.raft.core.Message.{AppendEntries, Init, LogEntry, RequestVote, RequestVoteResult}
-import me.invkrh.raft.core.Server
+import me.invkrh.raft.server.Message.{
+  AppendEntries,
+  Init,
+  LogEntry,
+  RequestVote,
+  RequestVoteResult
+}
+import me.invkrh.raft.server.Server
 import me.invkrh.raft.util.UID
 
 sealed trait EndpointChecker {
