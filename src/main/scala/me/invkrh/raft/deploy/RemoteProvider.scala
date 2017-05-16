@@ -8,10 +8,10 @@ import akka.actor.ActorSystem
 import com.typesafe.config.ConfigFactory
 import me.invkrh.raft.util.Logging
 
-trait SystemProvider extends Logging {
+trait RemoteProvider extends Logging {
   def sysName: String
-  def sysPort: Int
-  def sysHostName: String = ""
+  def sysPort: Int = 0
+  def sysHostName: String = "localhost"
 
   def systemShutdownHook(): Unit = {
     logInfo("System has been shut down")

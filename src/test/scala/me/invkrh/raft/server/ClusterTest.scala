@@ -8,21 +8,11 @@ import akka.actor.ActorSystem
 import akka.pattern.ask
 import akka.testkit.{ImplicitSender, TestKit}
 import akka.util.Timeout
+import me.invkrh.raft.RaftTestHarness
 import me.invkrh.raft.server.Message.{Command, CommandResponse, Init}
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, FlatSpecLike}
 
-class ClusterTest
-    extends TestKit(ActorSystem("ClusterSpec"))
-    with ImplicitSender
-    with FlatSpecLike
-    with BeforeAndAfterAll
-    with BeforeAndAfterEach {
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
-  }
-
-  override def afterEach(): Unit = {}
+class ClusterTest extends RaftTestHarness("ClusterSpec") { self =>
 
   "Cluster" should "work well" in {
     val num = 5

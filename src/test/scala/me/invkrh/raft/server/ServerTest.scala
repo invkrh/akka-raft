@@ -5,23 +5,13 @@ import scala.language.postfixOps
 
 import akka.actor.{ActorSystem, PoisonPill}
 import akka.testkit.{ImplicitSender, TestKit}
+import me.invkrh.raft.RaftTestHarness
 import me.invkrh.raft.kit._
 import me.invkrh.raft.server.Exception.{HeartbeatIntervalException, LeaderNotUniqueException}
 import me.invkrh.raft.server.Message._
 import org.scalatest._
 
-class ServerTest
-    extends TestKit(ActorSystem("SeverSpec"))
-    with ImplicitSender
-    with FlatSpecLike
-    with BeforeAndAfterAll
-    with BeforeAndAfterEach { self =>
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
-  }
-
-  override def afterEach(): Unit = {}
+class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
   /////////////////////////////////////////////////
   //  Leader Election

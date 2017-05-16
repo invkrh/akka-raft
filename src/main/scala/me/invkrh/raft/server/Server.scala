@@ -39,7 +39,7 @@ object Server {
   }
 }
 
-// TODO: use --bootstrap.servers as input arguments
+// TODO: use --bootstrap.members as input arguments
 class Server(val id: Int,
              minElectionTime: FiniteDuration,
              maxElectionTime: FiniteDuration,
@@ -168,8 +168,7 @@ class Server(val id: Int,
   }
 
   def adminEndpoint: Receive = {
-    case GetStatus =>
-      sender ! Status(id, curTerm, curState, curLeaderId)
+    case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId)
     case Shutdown => context.system.terminate()
     // TODO: Add more admin endpoint
   }
@@ -265,6 +264,15 @@ class Server(val id: Int,
 //      throw IrrelevantMessageException(msg, sender)
   }
 
+  // TODO: Member Management problem, member is added one by one
+  override def receive: Receive =
+    adminEndpoint orElse {
+      case Init(memberDict) =>
+        logInfo(s"Server $id initialized")
+        members = memberDict
+        becomeFollower(curTerm)
+    }
+
   def follower: Receive =
     commandEndPoint orElse
       startElectionEndpoint orElse
@@ -301,15 +309,6 @@ class Server(val id: Int,
       requestVoteEndPoint orElse
       adminEndpoint orElse
       irrelevantMsgEndPoint
-
-  // TODO: Member Management problem, member is added one by one
-  override def receive: Receive =
-    adminEndpoint orElse {
-      case Init(memberDict) =>
-        logInfo(s"Server $id initialized")
-        members = memberDict
-        becomeFollower(curTerm)
-    }
 
   def becomeFollower(newTerm: Int, newLeader: Int = -1): Unit = {
     curTerm = newTerm
