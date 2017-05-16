@@ -18,18 +18,6 @@ object RemoteServer {
       .valueName("<server.properties file>")
       .text("Server configuration file path")
       .action((x, c) => c.copy(configFile = x))
-
-    note("\n")
-
-    cmd("init")
-      .action((_, c) => c.copy(action = "init"))
-      .text("trigger leader election")
-
-    note("\n")
-
-    cmd("stop")
-      .action((_, c) => c.copy(action = "stop"))
-      .text("stop all raft server")
   }
 
   def main(args: Array[String]): Unit = {
