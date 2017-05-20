@@ -6,6 +6,9 @@ scalaVersion := "2.11.8"
 
 // scalacOptions += "-feature"
 
+test in assembly := {}
+assemblyOutputPath in assembly := file(s"build/akka-raft-assembly-0.1.0.jar")
+
 libraryDependencies ++=
   Seq(
     "org.slf4j" % "slf4j-api" % "1.7.22",
