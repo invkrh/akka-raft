@@ -22,8 +22,8 @@ object Server {
     Props(new Server(id, minElectionTime, maxElectionTime, tickTime))
   }
 
-  def props(conf: ServerConf): Props = {
-    props(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
+  def props(id: Int, conf: ServerConf): Props = {
+    props(id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
   }
 
   def run(id: Int,
@@ -34,12 +34,12 @@ object Server {
     system.actorOf(props(id, minElectionTime, maxElectionTime, tickTime), name)
   }
 
-  def run(serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
-    system.actorOf(props(serverConf), "svr-" + serverConf.id)
+  def run(id: Int, serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
+    system.actorOf(props(id, serverConf), s"svr-$id")
   }
 }
 
-// TODO: use --bootstrap.members as input arguments
+// TODO: use --bootstrap.bootstrap as input arguments
 class Server(val id: Int,
              minElectionTime: FiniteDuration,
              maxElectionTime: FiniteDuration,
@@ -47,8 +47,8 @@ class Server(val id: Int,
     extends Actor
     with Logging {
 
-  def this(conf: ServerConf) =
-    this(conf.id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
+  def this(id: Int, conf: ServerConf) =
+    this(id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
 
   import context._
 

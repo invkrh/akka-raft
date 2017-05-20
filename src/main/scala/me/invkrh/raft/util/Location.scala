@@ -2,13 +2,15 @@ package me.invkrh.raft.util
 
 import java.net.URL
 
-case class ServerAddress(host: String, port: Int)
+case class Location(host: String, port: Int) {
+  override def toString: String = s"$host:$port"
+}
 
-object ServerAddress {
-  def apply(hostAndPort: String): ServerAddress = {
+object Location {
+  def apply(hostAndPort: String): Location = {
     try {
       val url = new URL("http://" + hostAndPort)
-      ServerAddress(url.getHost, url.getPort)
+      Location(url.getHost, url.getPort)
     } catch {
       case _: Exception =>
         throw new IllegalArgumentException(s"Listener is malformed with: $hostAndPort")

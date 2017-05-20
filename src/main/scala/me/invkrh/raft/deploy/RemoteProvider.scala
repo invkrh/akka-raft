@@ -1,7 +1,8 @@
 package me.invkrh.raft.deploy
 
-import scala.collection.JavaConverters._
+import java.net.InetAddress
 
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import akka.actor.ActorSystem
@@ -11,7 +12,7 @@ import me.invkrh.raft.util.Logging
 trait RemoteProvider extends Logging {
   def sysName: String
   def sysPort: Int = 0
-  def sysHostName: String = "localhost"
+  def sysHost: String = InetAddress.getLocalHost.getCanonicalHostName
 
   def systemShutdownHook(): Unit = {
     logInfo("System has been shut down")
@@ -21,7 +22,7 @@ trait RemoteProvider extends Logging {
   lazy val system: ActorSystem = {
     val config = Map(
       "akka.actor.provider" -> "remote",
-      "akka.remote.netty.tcp.hostname" -> sysHostName,
+      "akka.remote.netty.tcp.hostname" -> sysHost,
       "akka.remote.netty.tcp.port" -> sysPort.toString
     ).asJava
     val conf = ConfigFactory.parseMap(config).withFallback(ConfigFactory.load())

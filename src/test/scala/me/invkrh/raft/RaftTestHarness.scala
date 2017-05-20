@@ -2,10 +2,28 @@ package me.invkrh.raft
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
-import org.scalatest.{BeforeAndAfterAll, FlatSpecLike}
+import com.typesafe.config.ConfigFactory
+import me.invkrh.raft.deploy.RemoteProvider
+import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, WordSpecLike}
 
-abstract class RaftTestHarness(val specName: String)
-    extends TestKit(ActorSystem(specName))
+object RaftTestHarness {
+  def localSystem(name: String) = ActorSystem(name)
+  def remoteSystem(name: String): ActorSystem = {
+    new RemoteProvider {
+      override def sysName: String = name
+    }.system
+  }
+  def testSystem(name: String, withRemote: Boolean): ActorSystem = {
+    if (withRemote) {
+      remoteSystem(name)
+    } else {
+      localSystem(name)
+    }
+  }
+}
+
+abstract class RaftTestHarness(specName: String, withRemote: Boolean = false)
+    extends TestKit(RaftTestHarness.testSystem(specName, withRemote))
     with ImplicitSender
     with FlatSpecLike
     with BeforeAndAfterAll {
