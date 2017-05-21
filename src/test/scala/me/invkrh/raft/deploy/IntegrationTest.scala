@@ -3,9 +3,9 @@ package me.invkrh.raft.deploy
 import me.invkrh.raft.RaftTestHarness
 import me.invkrh.raft.deploy.bootstrap.BootstrapSystem
 import me.invkrh.raft.deploy.daemon.DaemonSystem
+import org.scalatest.WordSpec
 
-class IntegrationTest extends RaftTestHarness("IntegrationSpec") { self =>
-
+class IntegrationTest extends WordSpec {
   "Cluster" should {
     "be launched correctly" in {
       val configFilePath = getClass.getResource(s"/bootstrap").getPath

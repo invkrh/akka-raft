@@ -18,7 +18,7 @@ object BootstrapSystem {
       val loc = FileUtils.getCoordinatorSystemAddress(bootstrapLocationFilePath)
       new RemoteProvider {
         override def sysName: String = bootstrapSystemName
-        override def sysHost: String = loc.host
+        override def sysHostName: String = loc.hostName
         override def sysPort: Int = loc.port
         system.actorOf(ServerInitializer.props(initialSize), serverInitializerName)
       }

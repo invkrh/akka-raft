@@ -2,9 +2,8 @@ package me.invkrh.raft
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
-import com.typesafe.config.ConfigFactory
 import me.invkrh.raft.deploy.RemoteProvider
-import org.scalatest.{BeforeAndAfterAll, FlatSpecLike, WordSpecLike}
+import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
 object RaftTestHarness {
   def localSystem(name: String) = ActorSystem(name)

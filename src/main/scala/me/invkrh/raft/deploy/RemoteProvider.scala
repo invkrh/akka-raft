@@ -12,7 +12,7 @@ import me.invkrh.raft.util.Logging
 trait RemoteProvider extends Logging {
   def sysName: String
   def sysPort: Int = 0
-  def sysHost: String = InetAddress.getLocalHost.getCanonicalHostName
+  def sysHostName: String = InetAddress.getLocalHost.getCanonicalHostName
 
   def systemShutdownHook(): Unit = {
     logInfo("System has been shut down")
@@ -21,9 +21,8 @@ trait RemoteProvider extends Logging {
   // System is heavy, created as needed
   lazy val system: ActorSystem = {
     val config = Map(
-      "akka.actor.provider" -> "remote",
-      "akka.remote.netty.tcp.hostname" -> sysHost,
-      "akka.remote.netty.tcp.port" -> sysPort.toString
+      "akka.remote.artery.canonical.hostname" -> sysHostName,
+      "akka.remote.artery.canonical.port" -> sysPort.toString
     ).asJava
     val conf = ConfigFactory.parseMap(config).withFallback(ConfigFactory.load())
     val sys = ActorSystem(sysName, conf)
