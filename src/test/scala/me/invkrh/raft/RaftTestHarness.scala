@@ -25,7 +25,7 @@ object RaftTestHarness {
 abstract class RaftTestHarness(specName: String, withRemote: Boolean = false)
     extends TestKit(RaftTestHarness.testSystem(specName, withRemote))
     with ImplicitSender
-    with FlatSpecLike
+    with WordSpecLike
     with BeforeAndAfterAll {
 
   override def afterAll {

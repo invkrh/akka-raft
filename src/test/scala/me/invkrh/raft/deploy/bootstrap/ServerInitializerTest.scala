@@ -6,6 +6,4 @@ import me.invkrh.raft.deploy.{Ready, RemoteProvider}
 import me.invkrh.raft.server.Message.Init
 import scala.concurrent.duration._
 
-class ServerInitializerTest extends RaftTestHarness("ServerInitializerTest") {
-  "BootstrapCoordinator" should "work" in {}
-}
+class ServerInitializerTest extends RaftTestHarness("ServerInitializerTest") {}
