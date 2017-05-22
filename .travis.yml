@@ -4,7 +4,7 @@ scala:
 jdk:
   - oraclejdk8
 
-script: sbt clean package coverage test coverageReport
+script: sbt scalastyle test:scalastyle clean package coverage test coverageReport
 branches:
   only:
     - master
