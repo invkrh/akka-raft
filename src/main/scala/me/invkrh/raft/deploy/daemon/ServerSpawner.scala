@@ -10,7 +10,7 @@ import me.invkrh.raft.server.{Server, ServerConf}
 import me.invkrh.raft.util.{Location, Logging}
 
 object ServerSpawner {
-  def props(coordinatorAddress: Location, serverConf: ServerConf) =
+  def props(coordinatorAddress: Location, serverConf: ServerConf): Props =
     Props(new ServerSpawner(coordinatorAddress, serverConf))
 }
 
@@ -25,6 +25,7 @@ class ServerSpawner(bootstrapAddress: Location, serverConf: ServerConf)
     .onComplete {
       case Success(ref) =>
         logInfo("Find bootstrap coordinator, asking for server ID")
+        // TODO: use ask pattern
         ref ! AskServerID
       case Failure(e) => throw e
     }

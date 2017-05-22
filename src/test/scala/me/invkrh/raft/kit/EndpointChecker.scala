@@ -1,12 +1,12 @@
 package me.invkrh.raft.kit
 
-import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
-import akka.actor.SupervisorStrategy._
 import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, Props}
-import akka.pattern.{AskTimeoutException, gracefulStop}
+import akka.actor.SupervisorStrategy._
+import akka.pattern.{gracefulStop, AskTimeoutException}
 import akka.testkit.TestProbe
 import me.invkrh.raft.server.Message.{
   AppendEntries,
@@ -61,7 +61,7 @@ sealed trait EndpointChecker {
       val stopped: Future[Boolean] = gracefulStop(serverRef, 5 seconds)
       Await.result(stopped, 6 seconds)
     } catch {
-      case e: AskTimeoutException ⇒ throw e
+      case e: AskTimeoutException => throw e
     }
   }
 

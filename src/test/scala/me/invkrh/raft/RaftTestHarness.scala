@@ -6,7 +6,7 @@ import me.invkrh.raft.deploy.RemoteProvider
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
 object RaftTestHarness {
-  def localSystem(name: String) = ActorSystem(name)
+  def localSystem(name: String): ActorSystem = ActorSystem(name)
   def remoteSystem(name: String): ActorSystem = {
     new RemoteProvider {
       override def sysName: String = name
