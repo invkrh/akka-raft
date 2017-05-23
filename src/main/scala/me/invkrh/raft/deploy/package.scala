@@ -15,8 +15,5 @@ package object deploy {
 
   case object AskServerID
   case class ServerID(id: Int)
-  case class Ready(serverRef: ActorRef)
-
-  case class AdminConfig(configFile: File = new File("."), action: String = "")
-  case class BootstrapConfig(configFile: File = new File("."), action: String = "")
+  case class Ready(id: Int, serverRef: ActorRef)
 }

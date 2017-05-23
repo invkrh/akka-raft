@@ -91,7 +91,8 @@ class Server(val id: Int,
   // TODO: rethink of the ask pattern, queue with timeout
   // TODO: use router
   def distributeRPC(msg: RPCMessage, retries: Int = 1): Unit = {
-    implicit val timeout = Timeout(tickTime / retries)
+    val timeSlice = tickTime / retries
+    implicit val timeout = Timeout(timeSlice) // ask timeout
     Future
       .sequence {
         for {
@@ -135,7 +136,9 @@ class Server(val id: Int,
               )
             }
           case Failure(e) =>
-            logWarn(s"Can not get ${callback.request} from ${follower.path} with error: " + e)
+            logWarn(
+              s"Can not get ${callback.request} response from ${follower.path} with error: " + e
+            )
             (curMaxTerm, count)
 
         }
@@ -188,14 +191,17 @@ class Server(val id: Int,
       } else if (curTerm == hb.term) {
         curState match {
           case State.Leader =>
-            throw LeaderNotUniqueException(id, hb.leaderId)
+            throw LeaderNotUniqueException(id, hb.leaderId, hb.term)
           case State.Candidate =>
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
             becomeFollower(hb.term, hb.leaderId)
           case State.Follower =>
             curLeaderId foreach { leaderId =>
-              checkOrThrow(leaderId == hb.leaderId, LeaderNotUniqueException(id, hb.leaderId))
+              checkOrThrow(
+                leaderId == hb.leaderId,
+                LeaderNotUniqueException(id, hb.leaderId, hb.term)
+              )
             }
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)

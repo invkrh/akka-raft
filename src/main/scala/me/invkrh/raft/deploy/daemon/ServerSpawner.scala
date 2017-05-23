@@ -1,39 +1,31 @@
 package me.invkrh.raft.deploy.daemon
 
+import akka.pattern.{ask, pipe}
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
-import akka.actor.{Actor, Props}
+import akka.actor.{Actor, ActorRef, Props}
+import akka.util.Timeout
 import me.invkrh.raft.deploy._
 import me.invkrh.raft.server.{Server, ServerConf}
 import me.invkrh.raft.util.{Location, Logging}
 
 object ServerSpawner {
-  def props(coordinatorAddress: Location, serverConf: ServerConf): Props =
-    Props(new ServerSpawner(coordinatorAddress, serverConf))
+  def props(bootstrapRef: ActorRef, serverConf: ServerConf): Props =
+    Props(new ServerSpawner(bootstrapRef, serverConf))
 }
 
-class ServerSpawner(bootstrapAddress: Location, serverConf: ServerConf)
-    extends Actor
-    with Logging {
-  implicit val executor: ExecutionContextExecutor = context.system.dispatcher
-  val path = s"akka://$bootstrapSystemName@$bootstrapAddress/user/$serverInitializerName"
-  context
-    .actorSelection(path)
-    .resolveOne(5.seconds)
-    .onComplete {
-      case Success(ref) =>
-        logInfo("Find bootstrap coordinator, asking for server ID")
-        // TODO: use ask pattern
-        ref ! AskServerID
-      case Failure(e) => throw e
-    }
-
+class ServerSpawner(bootstrapRef: ActorRef, serverConf: ServerConf) extends Actor with Logging {
+  bootstrapRef ! AskServerID
   override def receive: Receive = {
     case ServerID(id) =>
-      val server = context.actorOf(Server.props(id, serverConf), raftServerName)
-      logInfo(s"Server $id has been created at ${server.path}, wait for initialization")
-      sender ! Ready(server)
+      if (sender != bootstrapRef) {
+        throw new RuntimeException("Unknown bootstrap server")
+      } else {
+        val server = context.actorOf(Server.props(id, serverConf), s"$raftServerName-$id")
+        logInfo(s"Server $id has been created at ${server.path}, wait for initialization")
+        bootstrapRef ! Ready(id, server)
+      }
   }
 }
