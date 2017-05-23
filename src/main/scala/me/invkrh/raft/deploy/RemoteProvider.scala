@@ -21,6 +21,7 @@ trait RemoteProvider extends Logging {
   def getSystem(hostName: String = InetAddress.getLocalHost.getCanonicalHostName,
                 port: Int = 0): ActorSystem = {
     val config = Map(
+      "akka.actor.provider" -> "remote",
       "akka.remote.artery.canonical.hostname" -> hostName,
       "akka.remote.artery.canonical.port" -> port.toString
     ).asJava
