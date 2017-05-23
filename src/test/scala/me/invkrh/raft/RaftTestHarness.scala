@@ -8,8 +8,9 @@ import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 object RaftTestHarness {
   def localSystem(name: String): ActorSystem = ActorSystem(name)
   def remoteSystem(name: String): ActorSystem = {
-    new RemoteProvider {}
-      .createSystem(systemName = name)
+    new RemoteProvider {
+      override val systemName: String = name
+    }.getSystem()
   }
   def testSystem(name: String, withRemote: Boolean): ActorSystem = {
     if (withRemote) {

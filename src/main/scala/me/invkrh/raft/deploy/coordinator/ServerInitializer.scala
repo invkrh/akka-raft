@@ -1,21 +1,31 @@
-package me.invkrh.raft.deploy.bootstrap
+package me.invkrh.raft.deploy.coordinator
 
 import akka.actor.{Actor, ActorRef, Props}
-import me.invkrh.raft.deploy.{AskServerID, Ready, ServerID}
+import me.invkrh.raft.deploy.{AskServerID, Ready, ServerID, raftServerName}
 import me.invkrh.raft.server.Message.Init
+import me.invkrh.raft.server.{Server, ServerConf}
 
 object ServerInitializer {
-  def props(initialSize: Int): Props = Props(new ServerInitializer(initialSize))
+  def props(initialSize: Int, serverConf: ServerConf): Props =
+    Props(new ServerInitializer(initialSize, serverConf))
 }
 
-class ServerInitializer(initialSize: Int) extends Actor {
-  var membership: Map[Int, ActorRef] = Map()
-  var remoteSysCnt = 0
+class ServerInitializer(initialSize: Int, serverConf: ServerConf) extends Actor {
+
+  private var membership: Map[Int, ActorRef] = Map(
+    0 -> context.system.actorOf(Server.props(0, serverConf), s"$raftServerName-0")
+  )
+  private var remoteSysCnt = membership.size
+
   // TODO: need to deploy remotely ? as an over watcher
   override def receive: Receive = {
     case AskServerID =>
-      sender ! ServerID(remoteSysCnt)
-      remoteSysCnt += 1
+      if (remoteSysCnt < initialSize) {
+        sender ! ServerID(remoteSysCnt)
+        remoteSysCnt += 1
+      } else {
+        sender ! ServerID(-1)
+      }
     case Ready(id, serverRef) =>
       membership = membership.updated(id, serverRef)
       // scalastyle:off println
@@ -26,7 +36,6 @@ class ServerInitializer(initialSize: Int) extends Actor {
         // scalastyle:off println
         println("All servers are initialized")
         // scalastyle:on println
-        context.system.terminate()
       }
   }
 }

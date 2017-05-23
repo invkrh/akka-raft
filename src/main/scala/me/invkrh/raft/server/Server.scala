@@ -39,7 +39,6 @@ object Server {
   }
 }
 
-// TODO: use --bootstrap.bootstrap as input arguments
 class Server(val id: Int,
              minElectionTime: FiniteDuration,
              maxElectionTime: FiniteDuration,
@@ -191,7 +190,7 @@ class Server(val id: Int,
       } else if (curTerm == hb.term) {
         curState match {
           case State.Leader =>
-            throw LeaderNotUniqueException(id, hb.leaderId, hb.term)
+            throw InvalidLeaderException(id, hb.leaderId, hb.term)
           case State.Candidate =>
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
@@ -200,7 +199,7 @@ class Server(val id: Int,
             curLeaderId foreach { leaderId =>
               checkOrThrow(
                 leaderId == hb.leaderId,
-                LeaderNotUniqueException(id, hb.leaderId, hb.term)
+                InvalidLeaderException(id, hb.leaderId, hb.term)
               )
             }
             // TODO: Add precessing

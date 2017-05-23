@@ -20,10 +20,12 @@ class ServerSpawner(bootstrapRef: ActorRef, serverConf: ServerConf) extends Acto
   bootstrapRef ! AskServerID
   override def receive: Receive = {
     case ServerID(id) =>
-      if (sender != bootstrapRef) {
-        throw new RuntimeException("Unknown bootstrap server")
+      if (id < 0) {
+        context.system.terminate()
+      } else if (sender != bootstrapRef) {
+        throw new RuntimeException("Unknown coordinator.conf server")
       } else {
-        val server = context.actorOf(Server.props(id, serverConf), s"$raftServerName-$id")
+        val server = context.system.actorOf(Server.props(id, serverConf), s"$raftServerName-$id")
         logInfo(s"Server $id has been created at ${server.path}, wait for initialization")
         bootstrapRef ! Ready(id, server)
       }

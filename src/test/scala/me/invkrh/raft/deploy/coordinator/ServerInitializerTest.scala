@@ -1,4 +1,4 @@
-package me.invkrh.raft.deploy.bootstrap
+package me.invkrh.raft.deploy.coordinator
 
 import akka.testkit.TestProbe
 import me.invkrh.raft.RaftTestHarness

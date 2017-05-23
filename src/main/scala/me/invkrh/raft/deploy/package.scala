@@ -6,7 +6,7 @@ import akka.actor.ActorRef
 
 package object deploy {
   val daemonSystemName = "daemon-system"
-  val bootstrapSystemName = "bootstrap-system"
+  val coordinatorSystemName = "coordinator-system"
 
   val serverInitializerName = "initializer"
   val serverSpawnerName = "spawner"

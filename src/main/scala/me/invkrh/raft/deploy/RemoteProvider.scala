@@ -10,14 +10,16 @@ import com.typesafe.config.ConfigFactory
 import me.invkrh.raft.util.Logging
 
 trait RemoteProvider extends Logging {
+  val systemName: String = "RemoteSystem"
+
   def systemShutdownHook(): Unit = {
-    logInfo("System has been shut down")
+    logInfo(s"System [$systemName] has been shut down")
   }
 
   // System is heavy, create as needed
-  def createSystem(hostName: String = InetAddress.getLocalHost.getCanonicalHostName,
-                   port: Int = 0,
-                   systemName: String = "RemoteSystem"): ActorSystem = {
+  // The problem of being a singleton due to actor name conflict in the same system
+  def getSystem(hostName: String = InetAddress.getLocalHost.getCanonicalHostName,
+                port: Int = 0): ActorSystem = {
     val config = Map(
       "akka.remote.artery.canonical.hostname" -> hostName,
       "akka.remote.artery.canonical.port" -> port.toString
