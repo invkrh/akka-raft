@@ -4,7 +4,8 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.{ActorRef, ActorSystem}
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestProbe
+
 import me.invkrh.raft.server.Message.RaftMessage
 
 sealed trait ProbeCheck {

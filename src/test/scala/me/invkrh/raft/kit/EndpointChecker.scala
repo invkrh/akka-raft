@@ -8,6 +8,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, 
 import akka.actor.SupervisorStrategy._
 import akka.pattern.{gracefulStop, AskTimeoutException}
 import akka.testkit.TestProbe
+
 import me.invkrh.raft.server.Message.{
   AppendEntries,
   Init,

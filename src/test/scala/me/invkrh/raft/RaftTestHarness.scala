@@ -1,13 +1,13 @@
 package me.invkrh.raft
 
-import java.net.InetAddress
+import scala.collection.JavaConverters._
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
-import me.invkrh.raft.deploy.RemoteProvider
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
-import scala.collection.JavaConverters._
+
+import me.invkrh.raft.deploy.RemoteProvider
 
 object RaftTestHarness {
   def localSystem(name: String): ActorSystem = {

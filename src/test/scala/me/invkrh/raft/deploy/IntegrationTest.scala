@@ -1,14 +1,15 @@
 package me.invkrh.raft.deploy
 
+import org.scalatest.WordSpec
+
 import me.invkrh.raft.deploy.coordinator.CoordinatorSystem
 import me.invkrh.raft.deploy.daemon.DaemonSystem
-import org.scalatest.WordSpec
 
 class IntegrationTest extends WordSpec {
 
   /**
-    * This test will use remote system define in the main function
-    */
+   * This test will use remote system define in the main function
+   */
   "Cluster" should {
     "be launched correctly" in {
       val raftConfigFilePath = getClass.getResource(s"/raft.conf").getPath
