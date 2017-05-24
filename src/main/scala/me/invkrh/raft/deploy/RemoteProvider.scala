@@ -22,6 +22,7 @@ trait RemoteProvider extends Logging {
                 port: Int = 0): ActorSystem = {
     val config = Map(
       "akka.actor.provider" -> "remote",
+      "akka.remote.artery.enabled" -> "on",
       "akka.remote.artery.canonical.hostname" -> hostName,
       "akka.remote.artery.canonical.port" -> port.toString
     ).asJava
