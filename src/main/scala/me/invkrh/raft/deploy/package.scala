@@ -1,7 +1,5 @@
 package me.invkrh.raft
 
-import java.io.File
-
 import akka.actor.ActorRef
 
 package object deploy {

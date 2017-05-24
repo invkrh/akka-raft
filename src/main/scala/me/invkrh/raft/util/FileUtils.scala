@@ -1,6 +1,6 @@
 package me.invkrh.raft.util
 
-import java.nio.file.{Files, Path, Paths}
+import java.nio.file.{Files, Path}
 
 import scala.collection.JavaConverters._
 

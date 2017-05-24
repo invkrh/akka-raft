@@ -7,6 +7,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 
 import akka.actor.ActorSystem
 import com.typesafe.config.ConfigFactory
+
 import me.invkrh.raft.util.Logging
 
 trait RemoteProvider extends Logging {

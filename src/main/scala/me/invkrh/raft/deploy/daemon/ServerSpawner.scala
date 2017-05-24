@@ -1,15 +1,10 @@
 package me.invkrh.raft.deploy.daemon
 
-import akka.pattern.{ask, pipe}
-import scala.concurrent.ExecutionContextExecutor
-import scala.concurrent.duration._
-import scala.util.{Failure, Success}
-
 import akka.actor.{Actor, ActorRef, Props}
-import akka.util.Timeout
+
 import me.invkrh.raft.deploy._
 import me.invkrh.raft.server.{Server, ServerConf}
-import me.invkrh.raft.util.{Location, Logging}
+import me.invkrh.raft.util.Logging
 
 object ServerSpawner {
   def props(coordinatorRef: ActorRef, serverConf: ServerConf): Props =

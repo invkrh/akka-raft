@@ -3,6 +3,7 @@ package me.invkrh.raft.deploy.coordinator
 import java.nio.file.{Files, Paths}
 
 import com.typesafe.config.ConfigFactory
+
 import me.invkrh.raft.deploy._
 import me.invkrh.raft.server.ServerConf
 

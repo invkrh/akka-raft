@@ -6,6 +6,7 @@ import scala.language.postfixOps
 import scala.util.Random
 
 import akka.actor.{ActorRef, Cancellable, Scheduler}
+
 import me.invkrh.raft.server.Message._
 
 trait Timer {

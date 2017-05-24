@@ -3,6 +3,7 @@ package me.invkrh.raft.server
 import scala.collection.mutable.ArrayBuffer
 
 import akka.actor.ActorRef
+
 import me.invkrh.raft.server.Message.RaftMessage
 import me.invkrh.raft.util.Logging
 

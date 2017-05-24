@@ -1,9 +1,10 @@
 package me.invkrh.raft.deploy.coordinator
 
 import akka.actor.{Actor, ActorRef, Props}
-import me.invkrh.raft.deploy.{AskServerID, Ready, ServerID, raftServerName}
-import me.invkrh.raft.server.Message.Init
+
+import me.invkrh.raft.deploy.{raftServerName, AskServerID, Ready, ServerID}
 import me.invkrh.raft.server.{Server, ServerConf}
+import me.invkrh.raft.server.Message.Init
 
 object ServerInitializer {
   def props(initialSize: Int, serverConf: ServerConf): Props =

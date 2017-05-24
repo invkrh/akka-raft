@@ -8,7 +8,6 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import com.typesafe.config.{Config, ConfigFactory}
-import me.invkrh.raft.util.Location
 
 case class ServerConf(minElectionTime: FiniteDuration,
                       maxElectionTime: FiniteDuration,

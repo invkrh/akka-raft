@@ -7,9 +7,9 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 import com.typesafe.config.ConfigFactory
+
 import me.invkrh.raft.deploy._
 import me.invkrh.raft.server.ServerConf
-import me.invkrh.raft.util.FileUtils
 
 object DaemonSystem extends RemoteProvider {
   override val systemName: String = daemonSystemName
