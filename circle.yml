@@ -14,12 +14,12 @@ dependencies:
     - find ~/.sbt -name "*.lock" | xargs -r rm
     - find ~/.ivy2 -name "ivydata-*.properties" | xargs -r rm
   override:
-    - sbt ++$SCALA_VERSION scalastyle test:scalastyle coverage test:compile
+    - sbt scalastyle test:scalastyle coverage test:compile
 
 test:
   override: 
-    - sbt ++$SCALA_VERSION coverage test
-    - sbt ++$SCALA_VERSION coverageReport
+    - sbt coverage test
+    - sbt coverageReport
   post:
     - bash <(curl -s https://codecov.io/bash)
     - cp target/scala-$SCALA_BINARY_VERSION/coverage-report  $CIRCLE_ARTIFACTS/coverage-report
