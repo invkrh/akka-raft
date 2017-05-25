@@ -197,6 +197,7 @@ class Server(val id: Int,
             sender ! AppendEntriesResult(hb.term, success = true)
             becomeFollower(hb.term, hb.leaderId)
           case State.Follower =>
+            logInfo(s"Heartbeat from leader ${hb.leaderId} at term ${hb.term}")
             curLeaderId foreach { leaderId =>
               checkOrThrow(
                 leaderId == hb.leaderId,

@@ -98,9 +98,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     }
 
     "reset election timeout if AppendEntries msg is received" in {
-      val electionTime = 150.millis
-      val tickTime = 100.millis
-      val heartbeatNum = 3
+      val electionTime = 1000.millis
+      val tickTime = 200.millis
+      val heartbeatNum = 8
       val checker = new FollowerEndPointChecker()
       checker
         .setElectionTime(electionTime)
@@ -111,7 +111,10 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             tickTime * heartbeatNum + electionTime * 2,
             Rep(
               heartbeatNum,
-              Delay(tickTime, Tell(AppendEntries(0, checker.getId + 1, 0, 0, Seq[LogEntry](), 0))),
+              Delay(
+                tickTime,
+                Tell(AppendEntries(0, checker.getId + 1, 0, 0, Seq[LogEntry](), 0))
+              ),
               Expect(AppendEntriesResult(0, success = true))
             ),
             Expect(RequestVote(1, checker.getId, 0, 0))
