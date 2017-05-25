@@ -22,5 +22,5 @@ test:
     - sbt coverageReport
   post:
     - bash <(curl -s https://codecov.io/bash)
-    - cp target/scala-$SCALA_BINARY_VERSION/coverage-report  $CIRCLE_ARTIFACTS/coverage-report
-    - cp target/scala-$SCALA_BINARY_VERSION/scoverage-report $CIRCLE_ARTIFACTS/scoverage-report
+    - mv target/scala-$SCALA_BINARY_VERSION/coverage-report  $CIRCLE_ARTIFACTS/coverage-report
+    - mv target/scala-$SCALA_BINARY_VERSION/scoverage-report $CIRCLE_ARTIFACTS/scoverage-report
