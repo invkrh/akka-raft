@@ -1,0 +1,23 @@
+machine: 
+  environment:
+    SCALA_VERSION: 2.11.8
+    SCALA_BINARY_VERSION: 2.11
+  java:
+    version: oraclejdk8
+
+dependencies:
+  cache_directories:
+    - "~/.ivy2/cache"
+    - "~/.sbt/boot"
+  pre:
+    - find ~/.sbt -name "*.lock" | xargs -r rm
+    - find ~/.ivy2 -name "ivydata-*.properties" | xargs -r rm
+  override:
+    - sbt ++$SCALA_VERSION coverage test:compile
+
+test:
+  override: 
+    - sbt ++$SCALA_VERSION scalastyle test:scalastyle coverage test coverageReport
+  post:
+    - mv target/scala-$SCALA_BINARY_VERSION/coverage-report  $CIRCLE_ARTIFACTS/coverage-report
+    - mv target/scala-$SCALA_BINARY_VERSION/scoverage-report $CIRCLE_ARTIFACTS/scoverage-report
