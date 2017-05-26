@@ -21,15 +21,14 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) {
   "Cluster" should {
     "be launched correctly" in {
       val raftConfigFilePath = getClass.getResource(s"/raft.conf").getPath
+      val config = ConfigFactory.parseFile(new File(raftConfigFilePath))
       CoordinatorSystem.main(Array(raftConfigFilePath))
       (1 to 3) foreach { _ =>
         DaemonSystem.main(Array(raftConfigFilePath))
       }
-  
-      val config = ConfigFactory.parseFile(new File(raftConfigFilePath))
       val refFuture = system
         .actorSelection(serverAddress(config))
-        .resolveOne(5.seconds)
+        .resolveOne(10.seconds)
 
       Thread.sleep(5000)
 

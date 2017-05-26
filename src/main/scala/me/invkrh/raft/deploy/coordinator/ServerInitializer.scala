@@ -2,11 +2,11 @@ package me.invkrh.raft.deploy.coordinator
 
 import akka.actor.{Actor, ActorRef, Props}
 
-import me.invkrh.raft.message.{Init, Register, ServerID, ServerIdRequest}
+import me.invkrh.raft.message.{Init, Register, ServerId, ServerIdRequest}
 import me.invkrh.raft.server.ServerConf
 
 object ServerInitializer {
-  def props(initialSize: Int, serverConf: ServerConf): Props =
+  def props(initialSize: Int): Props =
     Props(new ServerInitializer(initialSize))
 }
 
@@ -19,10 +19,10 @@ class ServerInitializer(initialSize: Int) extends Actor {
   override def receive: Receive = {
     case ServerIdRequest =>
       if (memberCount < initialSize) {
-        sender ! ServerID(memberCount)
+        sender ! ServerId(memberCount)
         memberCount += 1
       } else {
-        sender ! ServerID(-1)
+        sender ! ServerId(-1)
       }
     case Register(id) =>
       membership = membership.updated(id, sender)

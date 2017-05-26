@@ -64,7 +64,7 @@ sealed trait EndpointChecker {
     val probes: List[TestProbe] = List.fill(probeNum)(TestProbe("follower"))
     val supervisor: ActorRef =
       system.actorOf(
-        Props(new ServerSupervisor(s"svr-$id", probes.map(_.ref): _*)),
+        Props(new ExceptionDetector(s"svr-$id", probes.map(_.ref): _*)),
         s"supervisor-${UID()}"
       )
     val server: ActorRef = {
@@ -80,17 +80,6 @@ sealed trait EndpointChecker {
     actions foreach { _.execute(server, probes) }
     probes foreach (_.ref ! PoisonPill)
     stopServer(supervisor) // server is a child of supervisor
-  }
-}
-
-class ServerSupervisor(serverName: String, probes: ActorRef*) extends Actor {
-  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy() {
-    case thr: Throwable =>
-      probes foreach { _ ! thr }
-      Restart // or make it configurable/controllable during the test
-  }
-  def receive: PartialFunction[Any, Unit] = {
-    case p: Props => sender ! context.actorOf(p, serverName)
   }
 }
 

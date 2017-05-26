@@ -15,6 +15,8 @@ import me.invkrh.raft.server.Exception._
 import me.invkrh.raft.util._
 
 object Server {
+
+  val raftServerName = "raft-server"
   def props(id: Int,
             minElectionTime: FiniteDuration,
             maxElectionTime: FiniteDuration,
@@ -36,7 +38,7 @@ object Server {
   }
 
   def run(id: Int, serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
-    system.actorOf(props(id, serverConf), s"svr-$id")
+    system.actorOf(props(id, serverConf), s"$raftServerName-$id")
   }
 }
 
@@ -46,9 +48,6 @@ class Server(val id: Int,
              tickTime: FiniteDuration)
     extends Actor
     with Logging {
-
-  def this(id: Int, conf: ServerConf) =
-    this(id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
 
   import context._
 
