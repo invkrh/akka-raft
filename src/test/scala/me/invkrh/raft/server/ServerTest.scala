@@ -5,10 +5,10 @@ import scala.language.postfixOps
 
 import akka.actor.PoisonPill
 
-import me.invkrh.raft.RaftTestHarness
+import me.invkrh.raft.exception.{HeartbeatIntervalException, InvalidLeaderException}
 import me.invkrh.raft.kit._
 import me.invkrh.raft.message._
-import me.invkrh.raft.server.Exception.{HeartbeatIntervalException, InvalidLeaderException}
+import me.invkrh.raft.RaftTestHarness
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
@@ -111,10 +111,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             tickTime * heartbeatNum + electionTime * 2,
             Rep(
               heartbeatNum,
-              Delay(
-                tickTime,
-                Tell(AppendEntries(0, checker.getId + 1, 0, 0, Seq[LogEntry](), 0))
-              ),
+              Delay(tickTime, Tell(AppendEntries(0, checker.getId + 1, 0, 0, Seq[LogEntry](), 0))),
               Expect(AppendEntriesResult(0, success = true))
             ),
             Expect(RequestVote(1, checker.getId, 0, 0))
@@ -160,7 +157,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
+          Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
         )
         .run()
     }
@@ -305,7 +302,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, term, State.Follower, Some(leaderId)))
+          Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
         )
         .run()
     }
@@ -403,7 +400,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setActions(
           Tell(GetStatus),
-          Expect(Status(checker.getId, 1, State.Leader, Some(checker.getId)))
+          Expect(Status(checker.getId, 1, ServerState.Leader, Some(checker.getId)))
         )
         .run()
     }

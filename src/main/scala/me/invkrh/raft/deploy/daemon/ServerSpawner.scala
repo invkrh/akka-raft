@@ -3,6 +3,7 @@ package me.invkrh.raft.deploy.daemon
 import akka.actor.{Actor, ActorRef, Props}
 
 import me.invkrh.raft.deploy._
+import me.invkrh.raft.exception.UnknownInitializerException
 import me.invkrh.raft.message.{Register, ServerId, ServerIdRequest}
 import me.invkrh.raft.server.{Server, ServerConf}
 import me.invkrh.raft.util.Logging
@@ -17,7 +18,7 @@ class ServerSpawner(initializerRef: ActorRef, serverConf: ServerConf) extends Ac
   override def receive: Receive = {
     case ServerId(id) =>
       if (sender != initializerRef) {
-        throw new RuntimeException("Unknown coordinator server")
+        throw UnknownInitializerException()
       } else if (id < 0) {
         logInfo(s"Initial size reached, no server will be created")
         context.system.terminate()

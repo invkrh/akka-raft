@@ -10,13 +10,18 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 
+import me.invkrh.raft.exception._
 import me.invkrh.raft.message._
-import me.invkrh.raft.server.Exception._
 import me.invkrh.raft.util._
 
 object Server {
 
   val raftServerName = "raft-server"
+
+  def checkOrThrow(assert: Boolean, cause: Throwable): Unit = {
+    if (!assert) throw cause
+  }
+
   def props(id: Int,
             minElectionTime: FiniteDuration,
             maxElectionTime: FiniteDuration,
@@ -50,12 +55,13 @@ class Server(val id: Int,
     with Logging {
 
   import context._
+  import Server.checkOrThrow
 
   implicit val scheduler: Scheduler = system.scheduler
 
   private var curTerm = 0
 
-  private var curState: State.Value = State.Bootstrap
+  private var curState: ServerState.Value = ServerState.Bootstrap
   private var curLeaderId: Option[Int] = None
   private var votedFor: Option[Int] = None
   private var members: Map[Int, ActorRef] = Map()
@@ -189,13 +195,13 @@ class Server(val id: Int,
         sender ! AppendEntriesResult(curTerm, success = false)
       } else if (curTerm == hb.term) {
         curState match {
-          case State.Leader =>
+          case ServerState.Leader =>
             throw InvalidLeaderException(id, hb.leaderId, hb.term)
-          case State.Candidate =>
+          case ServerState.Candidate =>
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
             becomeFollower(hb.term, hb.leaderId)
-          case State.Follower =>
+          case ServerState.Follower =>
             logInfo(s"Heartbeat from leader ${hb.leaderId} at term ${hb.term}")
             curLeaderId foreach { leaderId =>
               checkOrThrow(
@@ -222,7 +228,7 @@ class Server(val id: Int,
         sender ! RequestVoteResult(curTerm, success = false)
       } else {
         curState match {
-          case State.Follower =>
+          case ServerState.Follower =>
             if (votedFor.isEmpty || votedFor.get == reqVote.candidateId) {
               votedFor = Some(reqVote.candidateId)
               sender ! RequestVoteResult(reqVote.term, success = true)
@@ -230,7 +236,7 @@ class Server(val id: Int,
             } else {
               sender ! RequestVoteResult(reqVote.term, success = false)
             }
-          case State.Candidate | State.Leader =>
+          case ServerState.Candidate | ServerState.Leader =>
             sender ! RequestVoteResult(reqVote.term, success = true)
             becomeFollower(reqVote.term)
         }
@@ -240,16 +246,16 @@ class Server(val id: Int,
   def commandEndPoint: Receive = {
     case cmd: Command =>
       curState match {
-        case State.Leader =>
+        case ServerState.Leader =>
           processClientRequest(cmd)
           sender() ! CommandResponse(success = true)
-        case State.Candidate =>
+        case ServerState.Candidate =>
           curLeaderId match {
             case Some(sid) => // unreachable check, just in case
               throw CandidateHasLeaderException(sid)
             case None => clientMessageCache.add(sender, cmd)
           }
-        case State.Follower =>
+        case ServerState.Follower =>
           curLeaderId match {
             case Some(leaderId) =>
               val leaderRef =
@@ -318,7 +324,7 @@ class Server(val id: Int,
 
   def becomeFollower(newTerm: Int, newLeader: Int = -1): Unit = {
     curTerm = newTerm
-    curState = State.Follower
+    curState = ServerState.Follower
     votedFor = None
 
     if (newLeader == -1) { // New leader is unknown
@@ -345,7 +351,7 @@ class Server(val id: Int,
 
   def becomeCandidate(): Unit = {
     curTerm = curTerm + 1
-    curState = State.Candidate
+    curState = ServerState.Candidate
     votedFor = Some(id)
     curLeaderId = None
     logInfo(s"Election for term $curTerm started, server $id becomes candidate")
@@ -356,7 +362,7 @@ class Server(val id: Int,
 
   def becomeLeader(): Unit = {
     // term not changed
-    curState = State.Leader
+    curState = ServerState.Leader
     curLeaderId = Some(id)
     votedFor = None
     logInfo(s"Server $id becomes leader")

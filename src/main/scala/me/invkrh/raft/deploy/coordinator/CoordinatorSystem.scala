@@ -6,6 +6,7 @@ import com.typesafe.config.ConfigFactory
 
 import me.invkrh.raft.deploy._
 import me.invkrh.raft.deploy.daemon.ServerSpawner
+import me.invkrh.raft.exception.RaftConfigurationFileNotFoundException
 import me.invkrh.raft.server.ServerConf
 
 object CoordinatorSystem extends RemoteProvider {
@@ -14,7 +15,7 @@ object CoordinatorSystem extends RemoteProvider {
     require(args.length == 1)
     val configFilePath = Paths.get(args.head)
     if (!Files.exists(configFilePath)) {
-      throw new RuntimeException(s"Raft conf file does not exist: $configFilePath")
+      throw RaftConfigurationFileNotFoundException(configFilePath)
     } else {
       val config = ConfigFactory.parseFile(configFilePath.toFile)
       val system =

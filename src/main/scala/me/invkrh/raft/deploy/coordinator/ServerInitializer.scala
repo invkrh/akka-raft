@@ -3,7 +3,6 @@ package me.invkrh.raft.deploy.coordinator
 import akka.actor.{Actor, ActorRef, Props}
 
 import me.invkrh.raft.message.{Init, Register, ServerId, ServerIdRequest}
-import me.invkrh.raft.server.ServerConf
 
 object ServerInitializer {
   def props(initialSize: Int): Props =
