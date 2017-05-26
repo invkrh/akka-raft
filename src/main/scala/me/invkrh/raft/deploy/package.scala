@@ -13,11 +13,6 @@ package object deploy {
   val serverInitializerName = "initializer"
   val serverSpawnerName = "spawner"
 
-  def initializerAddress(configFile: File): String = {
-    val config = ConfigFactory.parseFile(configFile)
-    initializerAddress(config)
-  }
-
   def initializerAddress(config: Config): String = {
     val hostname = config.getString("coordinator.hostname")
     val port = config.getInt("coordinator.port")

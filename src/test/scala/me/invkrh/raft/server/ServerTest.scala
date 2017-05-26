@@ -309,9 +309,6 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
   }
 
   "leader" should {
-    // TODO: should send heartbeat to every follower every heartbeat interval *** FAILED ***
-    // [info]   java.lang.AssertionError: assertion failed: block took 636.684 milliseconds,
-    // exceeding 440.000 milliseconds
     "send heartbeat to every follower every heartbeat interval" in {
       val tickTime = 200.millis
       val checker = new LeaderEndPointChecker()

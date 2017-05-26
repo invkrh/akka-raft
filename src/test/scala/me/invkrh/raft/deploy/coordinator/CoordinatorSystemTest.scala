@@ -8,7 +8,7 @@ class CoordinatorSystemTest extends WordSpec {
   "CoordinatorSystem" should {
     "throw RaftConfigurationFileNotFoundException when given file does not exist" in {
       intercept[RaftConfigurationFileNotFoundException]{
-        CoordinatorSystem.main(Array("asdf"))
+        CoordinatorSystem.main(Array("wrongPath"))
       }
     }
   }

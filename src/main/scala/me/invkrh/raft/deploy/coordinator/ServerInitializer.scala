@@ -14,7 +14,6 @@ class ServerInitializer(initialSize: Int) extends Actor {
   private var membership: Map[Int, ActorRef] = Map()
   private var memberCount = 0
 
-  // TODO: need to deploy remotely ? as an over watcher
   override def receive: Receive = {
     case ServerIdRequest =>
       if (memberCount < initialSize) {

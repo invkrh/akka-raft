@@ -23,14 +23,6 @@ trait Timer {
   }
 }
 
-class FixedTimer(duration: FiniteDuration, event: TimerMessage)(implicit scheduler: Scheduler,
-                                                                target: ActorRef)
-    extends Timer {
-  def start(): Unit = {
-    cancellable = scheduler.scheduleOnce(duration, target, event)
-  }
-}
-
 class RandomizedTimer(min: FiniteDuration,
                       max: FiniteDuration,
                       event: TimerMessage)(implicit scheduler: Scheduler, target: ActorRef)
