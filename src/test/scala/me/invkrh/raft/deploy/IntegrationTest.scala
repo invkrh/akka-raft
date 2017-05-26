@@ -1,8 +1,12 @@
 package me.invkrh.raft.deploy
 
+import java.io.File
+
 import scala.concurrent.Await
+import scala.concurrent.duration._
 
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 
 import me.invkrh.raft.deploy.coordinator.CoordinatorSystem
 import me.invkrh.raft.deploy.daemon.DaemonSystem
@@ -21,10 +25,10 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) {
       (1 to 3) foreach { _ =>
         DaemonSystem.main(Array(raftConfigFilePath))
       }
-      import scala.concurrent.duration._
-
+  
+      val config = ConfigFactory.parseFile(new File(raftConfigFilePath))
       val refFuture = system
-        .actorSelection("akka://coordinator-system@localhost:5000/user/raft-server-0")
+        .actorSelection(serverAddress(config))
         .resolveOne(5.seconds)
 
       Thread.sleep(5000)

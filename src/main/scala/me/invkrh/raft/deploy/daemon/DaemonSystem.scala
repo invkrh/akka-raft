@@ -20,9 +20,7 @@ object DaemonSystem extends RemoteProvider {
       throw new RuntimeException(s"Raft conf file does not exist: $configFilePath")
     } else {
       val config = ConfigFactory.parseFile(configFilePath.toFile)
-      val hostname = config.getString("coordinator.hostname")
-      val port = config.getInt("coordinator.port")
-      val path = s"akka://$coordinatorSystemName@$hostname:$port/user/$serverInitializerName"
+      val path = initializerAddress(config)
       val serverConf = ServerConf(config.getConfig("server"))
       val system = getSystem()
       implicit val executor: ExecutionContextExecutor = system.dispatcher
