@@ -21,9 +21,9 @@ object CoordinatorSystem extends RemoteProvider {
         getSystem(config.getString("coordinator.hostname"), config.getInt("coordinator.port"))
       val initialSize = config.getInt("coordinator.quorum") * 2 - 1
       val serverConf = ServerConf(config.getConfig("server"))
-      val initRef =
+      val initializer =
         system.actorOf(ServerInitializer.props(initialSize, serverConf), serverInitializerName)
-      system.actorOf(ServerSpawner.props(initRef, serverConf), serverSpawnerName)
+      system.actorOf(ServerSpawner.props(initializer, serverConf), serverSpawnerName)
     }
   }
 }

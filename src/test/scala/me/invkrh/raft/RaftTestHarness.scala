@@ -1,6 +1,7 @@
 package me.invkrh.raft
 
 import scala.collection.JavaConverters._
+import scala.concurrent.ExecutionContextExecutor
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
@@ -36,6 +37,7 @@ abstract class RaftTestHarness(specName: String, withRemote: Boolean = false)
     with WordSpecLike
     with BeforeAndAfterAll {
 
+  implicit val executor: ExecutionContextExecutor = system.dispatcher
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }
