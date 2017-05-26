@@ -26,11 +26,10 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) {
       (1 to 3) foreach { _ =>
         DaemonSystem.main(Array(raftConfigFilePath))
       }
+      Thread.sleep(5000)
       val refFuture = system
         .actorSelection(serverAddress(config))
         .resolveOne(10.seconds)
-
-      Thread.sleep(5000)
 
       import akka.pattern.ask
       implicit val timeout = Timeout(5.seconds)
