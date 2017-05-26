@@ -11,7 +11,7 @@ object ServerInitializer {
 }
 
 class ServerInitializer(initialSize: Int, serverConf: ServerConf) extends Actor {
-  
+
   private var membership: Map[Int, ActorRef] = Map()
   private var remoteSysCnt = membership.size
 
