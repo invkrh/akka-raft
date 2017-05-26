@@ -1,7 +1,5 @@
 package me.invkrh.raft
 
-import akka.actor.ActorRef
-
 package object deploy {
   val daemonSystemName = "daemon-system"
   val coordinatorSystemName = "coordinator-system"
@@ -10,8 +8,4 @@ package object deploy {
   val serverSpawnerName = "spawner"
 
   val raftServerName = "raft-server"
-
-  case object AskServerID
-  case class ServerID(id: Int)
-  case class Ready(id: Int, serverRef: ActorRef)
 }

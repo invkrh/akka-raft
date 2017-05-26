@@ -9,13 +9,7 @@ import akka.actor.SupervisorStrategy._
 import akka.pattern.{gracefulStop, AskTimeoutException}
 import akka.testkit.TestProbe
 
-import me.invkrh.raft.server.Message.{
-  AppendEntries,
-  Init,
-  LogEntry,
-  RequestVote,
-  RequestVoteResult
-}
+import me.invkrh.raft.message.{AppendEntries, Init, LogEntry, RequestVote, RequestVoteResult}
 import me.invkrh.raft.server.Server
 import me.invkrh.raft.util.UID
 

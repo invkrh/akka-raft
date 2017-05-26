@@ -2,9 +2,8 @@ package me.invkrh.raft.deploy.coordinator
 
 import akka.actor.{Actor, ActorRef, Props}
 
-import me.invkrh.raft.deploy.{raftServerName, AskServerID, Ready, ServerID}
-import me.invkrh.raft.server.{Server, ServerConf}
-import me.invkrh.raft.server.Message.Init
+import me.invkrh.raft.message.{AskServerID, Init, Ready, ServerID}
+import me.invkrh.raft.server.ServerConf
 
 object ServerInitializer {
   def props(initialSize: Int, serverConf: ServerConf): Props =
@@ -12,10 +11,8 @@ object ServerInitializer {
 }
 
 class ServerInitializer(initialSize: Int, serverConf: ServerConf) extends Actor {
-
-  private var membership: Map[Int, ActorRef] = Map(
-    0 -> context.system.actorOf(Server.props(0, serverConf), s"$raftServerName-0")
-  )
+  
+  private var membership: Map[Int, ActorRef] = Map()
   private var remoteSysCnt = membership.size
 
   // TODO: need to deploy remotely ? as an over watcher

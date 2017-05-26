@@ -10,8 +10,8 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 
+import me.invkrh.raft.message._
 import me.invkrh.raft.server.Exception._
-import me.invkrh.raft.server.Message._
 import me.invkrh.raft.util._
 
 object Server {

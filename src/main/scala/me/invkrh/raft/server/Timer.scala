@@ -7,7 +7,7 @@ import scala.util.Random
 
 import akka.actor.{ActorRef, Cancellable, Scheduler}
 
-import me.invkrh.raft.server.Message._
+import me.invkrh.raft.message.TimerMessage
 
 trait Timer {
   var cancellable: Cancellable = _
@@ -23,7 +23,7 @@ trait Timer {
   }
 }
 
-class FixedTimer(duration: FiniteDuration, event: EventMessage)(implicit scheduler: Scheduler,
+class FixedTimer(duration: FiniteDuration, event: TimerMessage)(implicit scheduler: Scheduler,
                                                                 target: ActorRef)
     extends Timer {
   def start(): Unit = {
@@ -33,7 +33,7 @@ class FixedTimer(duration: FiniteDuration, event: EventMessage)(implicit schedul
 
 class RandomizedTimer(min: FiniteDuration,
                       max: FiniteDuration,
-                      event: EventMessage)(implicit scheduler: Scheduler, target: ActorRef)
+                      event: TimerMessage)(implicit scheduler: Scheduler, target: ActorRef)
     extends Timer {
   def start(): Unit = {
     val rd = min.toMillis + Random.nextInt((max.toMillis - min.toMillis + 1).toInt)
@@ -41,7 +41,7 @@ class RandomizedTimer(min: FiniteDuration,
   }
 }
 
-class PeriodicTimer(duration: FiniteDuration, event: EventMessage)(implicit scheduler: Scheduler,
+class PeriodicTimer(duration: FiniteDuration, event: TimerMessage)(implicit scheduler: Scheduler,
                                                                    target: ActorRef)
     extends Timer {
   def start(): Unit = {

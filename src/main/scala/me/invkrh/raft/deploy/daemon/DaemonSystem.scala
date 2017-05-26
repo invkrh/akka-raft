@@ -32,7 +32,7 @@ object DaemonSystem extends RemoteProvider {
         .onComplete {
           case Success(ref) =>
             // scalastyle:off println
-            println("Find coordinator, asking for server ID")
+            println("Find initializer under coordinator, asking for server ID")
             // scalastyle:on println
             system.actorOf(ServerSpawner.props(ref, serverConf), serverSpawnerName)
           case Failure(e) => throw e

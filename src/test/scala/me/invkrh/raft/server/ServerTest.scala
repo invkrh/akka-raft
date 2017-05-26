@@ -4,11 +4,11 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.PoisonPill
+import me.invkrh.raft.RaftTestHarness
 
 import me.invkrh.raft.kit._
-import me.invkrh.raft.RaftTestHarness
+import me.invkrh.raft.message._
 import me.invkrh.raft.server.Exception.{HeartbeatIntervalException, InvalidLeaderException}
-import me.invkrh.raft.server.Message._
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 

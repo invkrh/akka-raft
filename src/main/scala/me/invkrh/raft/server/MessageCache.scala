@@ -4,7 +4,7 @@ import scala.collection.mutable.ArrayBuffer
 
 import akka.actor.ActorRef
 
-import me.invkrh.raft.server.Message.RaftMessage
+import me.invkrh.raft.message.RaftMessage
 import me.invkrh.raft.util.Logging
 
 class MessageCache[T <: RaftMessage]() extends Logging {

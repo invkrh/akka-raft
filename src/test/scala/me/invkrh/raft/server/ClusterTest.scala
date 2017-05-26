@@ -7,8 +7,8 @@ import scala.language.postfixOps
 import akka.pattern.ask
 import akka.util.Timeout
 
+import me.invkrh.raft.message.{Command, CommandResponse, Init}
 import me.invkrh.raft.RaftTestHarness
-import me.invkrh.raft.server.Message.{Command, CommandResponse, Init}
 
 class ClusterTest extends RaftTestHarness("ClusterSpec") { self =>
 
