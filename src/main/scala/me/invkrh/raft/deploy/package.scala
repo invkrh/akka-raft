@@ -1,8 +1,6 @@
 package me.invkrh.raft
 
-import java.io.File
-
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.Config
 
 import me.invkrh.raft.server.Server.raftServerName
 
