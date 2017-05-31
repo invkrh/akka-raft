@@ -23,7 +23,7 @@ object DaemonSystem extends RemoteProvider {
       val config = ConfigFactory.parseFile(configFilePath.toFile)
       val path = initializerAddress(config)
       val serverConf = ServerConf(config.getConfig("server"))
-      val system = getSystem()
+      val system = createSystem()
       implicit val executor: ExecutionContextExecutor = system.dispatcher
       system
         .actorSelection(path)

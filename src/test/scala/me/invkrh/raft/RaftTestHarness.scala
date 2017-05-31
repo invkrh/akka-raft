@@ -20,7 +20,7 @@ object RaftTestHarness {
   def remoteSystem(name: String): ActorSystem = {
     new RemoteProvider {
       override val systemName: String = name
-    }.getSystem()
+    }.createSystem()
   }
   def testSystem(name: String, withRemote: Boolean): ActorSystem = {
     if (withRemote) {

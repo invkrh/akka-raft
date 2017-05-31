@@ -177,7 +177,7 @@ class Server(val id: Int,
 
   def adminEndpoint: Receive = {
     case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId)
-    case Shutdown => context.system.terminate()
+    case ShutDown => context.system.terminate()
     // TODO: Add more admin endpoint
   }
 

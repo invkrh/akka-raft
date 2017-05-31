@@ -17,3 +17,6 @@ final case class RaftConfigurationFileNotFoundException(configFilePath: Path)
     extends RuntimeException(s"Raft conf file does not exist: $configFilePath")
 
 final case class UnknownInitializerException() extends RuntimeException("Unknown initializer")
+
+final case class InvalidServerAddressException(address: String, details: String)
+    extends RuntimeException(s"Server address is not valid: $address, see details: [$details]")

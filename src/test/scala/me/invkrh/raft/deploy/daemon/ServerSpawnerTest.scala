@@ -21,7 +21,7 @@ class ServerSpawnerTest extends RaftTestHarness("ServerSpawnerTest") {
 
     "shutdown the system when ServerIdRequest is rejected" in {
       new RemoteProvider {
-        val system: ActorSystem = getSystem()
+        val system: ActorSystem = createSystem()
         val spawnerRef: ActorRef = system.actorOf(ServerSpawner.props(self, serverConf))
         expectMsg(ServerIdRequest)
         spawnerRef ! ServerId(-1)

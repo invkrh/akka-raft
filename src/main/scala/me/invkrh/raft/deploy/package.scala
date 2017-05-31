@@ -18,8 +18,12 @@ package object deploy {
   }
 
   def serverAddress(config: Config): String = {
-    val hostname = config.getString("coordinator.hostname")
+    val hostName = config.getString("coordinator.hostname")
     val port = config.getInt("coordinator.port")
-    s"akka://$coordinatorSystemName@$hostname:$port/user/$raftServerName-0"
+    s"akka://$coordinatorSystemName@$hostName:$port/user/$raftServerName-*"
+  }
+
+  def serverAddress(hostName: String, port: Int): String = {
+    s"akka://$coordinatorSystemName@$hostName:$port/user/$raftServerName-*"
   }
 }

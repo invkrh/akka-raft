@@ -1,6 +1,7 @@
 package me.invkrh.raft.deploy
 
 import java.io.File
+import java.net.{Inet4Address, InetAddress, NetworkInterface}
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -18,7 +19,7 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) {
   /**
    * This test will use remote system define in the main function
    */
-  "Cluster" should {
+  "Entire system" should {
     "be launched correctly" in {
       val raftConfigFilePath = getClass.getResource(s"/raft.conf").getPath
       val config = ConfigFactory.parseFile(new File(raftConfigFilePath))
@@ -27,8 +28,9 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) {
         DaemonSystem.main(Array(raftConfigFilePath))
       }
       Thread.sleep(5000)
+      val serverAddr = serverAddress(config)
       val refFuture = system
-        .actorSelection(serverAddress(config))
+        .actorSelection(serverAddr)
         .resolveOne(10.seconds)
 
       import akka.pattern.ask
