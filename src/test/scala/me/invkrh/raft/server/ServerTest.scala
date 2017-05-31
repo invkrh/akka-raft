@@ -3,7 +3,7 @@ package me.invkrh.raft.server
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-import akka.actor.PoisonPill
+import akka.actor.{ActorSystem, PoisonPill}
 
 import me.invkrh.raft.exception.{HeartbeatIntervalException, InvalidLeaderException}
 import me.invkrh.raft.kit._
@@ -30,6 +30,17 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis))
       expectNoMsg()
       server ! PoisonPill
+    }
+
+    "stop the system if ShutDown message is received" in {
+      val system = ActorSystem("StopTest")
+      val server =
+        system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis))
+      server ! ShutDown
+      assertResult(true) {
+        Thread.sleep(5000)
+        system.whenTerminated.isCompleted
+      }
     }
   }
 
