@@ -10,13 +10,12 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
 import akka.pattern.{after, ask, pipe}
 import akka.util.Timeout
 
+import me.invkrh.raft.deploy.raftServerName
 import me.invkrh.raft.exception._
 import me.invkrh.raft.message._
 import me.invkrh.raft.util._
 
 object Server {
-
-  val raftServerName = "raft-server"
 
   def checkOrThrow(assert: Boolean, cause: Throwable): Unit = {
     if (!assert) throw cause
@@ -55,6 +54,7 @@ class Server(val id: Int,
     with Logging {
 
   import context._
+
   import Server.checkOrThrow
 
   implicit val scheduler: Scheduler = system.scheduler
@@ -176,8 +176,11 @@ class Server(val id: Int,
   }
 
   def adminEndpoint: Receive = {
+    case MembershipRequest => sender ! Membership(members)
     case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId)
-    case ShutDown => context.system.terminate()
+    case ShutDown =>
+      sender ! ShutDownACK(id)
+      context.system.terminate()
     // TODO: Add more admin endpoint
   }
 
@@ -279,7 +282,7 @@ class Server(val id: Int,
   // TODO: Member Management problem, member is added one by one
   override def receive: Receive =
     adminEndpoint orElse {
-      case Init(memberDict) =>
+      case Membership(memberDict) =>
         logInfo(s"Server $id initialized")
         members = memberDict
         becomeFollower(curTerm)

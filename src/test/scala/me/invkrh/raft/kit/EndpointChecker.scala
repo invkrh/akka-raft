@@ -4,12 +4,11 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, PoisonPill, Props}
-import akka.actor.SupervisorStrategy._
+import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.{gracefulStop, AskTimeoutException}
 import akka.testkit.TestProbe
 
-import me.invkrh.raft.message.{AppendEntries, Init, LogEntry, RequestVote, RequestVoteResult}
+import me.invkrh.raft.message.{AppendEntries, LogEntry, Membership, RequestVote, RequestVoteResult}
 import me.invkrh.raft.server.Server
 import me.invkrh.raft.util.UID
 
@@ -75,7 +74,7 @@ sealed trait EndpointChecker {
     val dict = probes.zipWithIndex.map {
       case (p, i) => (i + 1, p.ref)
     }.toMap updated (id, server)
-    server ! Init(dict)
+    server ! Membership(dict)
     preActions()
     actions foreach { _.execute(server, probes) }
     probes foreach (_.ref ! PoisonPill)

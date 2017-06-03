@@ -1,14 +1,14 @@
-package me.invkrh.raft.deploy.coordinator
+package me.invkrh.raft.deploy.bootstrap
 
+import me.invkrh.raft.kit.RaftTestHarness
 import me.invkrh.raft.message.{ServerId, ServerIdRequest}
-import me.invkrh.raft.RaftTestHarness
 
 class ServerInitializerTest extends RaftTestHarness("ServerInitializerTest") {
   "ServerInitializer" should {
     "reject server id request when it saturates" in {
       val max = 5
       val initializerRef = system.actorOf(ServerInitializer.props(max))
-      for(i <- 0 until max) {
+      for (i <- 0 until max) {
         initializerRef ! ServerIdRequest
         expectMsg(ServerId(i))
       }

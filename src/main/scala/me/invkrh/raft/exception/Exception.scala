@@ -2,6 +2,10 @@ package me.invkrh.raft.exception
 
 import java.nio.file.Path
 
+import akka.actor.ActorRef
+
+import me.invkrh.raft.message.RaftMessage
+
 final case class HeartbeatIntervalException()
     extends IllegalArgumentException("Heartbeat interval should be smaller than the election time")
 
@@ -16,7 +20,16 @@ final case class CandidateHasLeaderException(leaderID: Int)
 final case class RaftConfigurationFileNotFoundException(configFilePath: Path)
     extends RuntimeException(s"Raft conf file does not exist: $configFilePath")
 
-final case class UnknownInitializerException() extends RuntimeException("Unknown initializer")
+final case class UnexpectedSenderException(msg: RaftMessage, sender: ActorRef)
+    extends RuntimeException(
+      s"Receive message [$msg] from unknown sender [${sender.path.address}]"
+    )
 
-final case class InvalidServerAddressException(address: String, details: String)
-    extends RuntimeException(s"Server address is not valid: $address, see details: [$details]")
+final case class MalformedAddressException(address: String)
+    extends RuntimeException(s"Server address is not valid: $address")
+
+final case class UnreachableAddressException(address: String)
+    extends RuntimeException(s"Address [$address] can not be reached")
+
+final case class InvalidArgumentException(argsStr: String)
+    extends RuntimeException(s"Invalid arguments: $argsStr")

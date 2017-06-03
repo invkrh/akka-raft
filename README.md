@@ -7,7 +7,7 @@ An implementation of raft consensus algorithm based on akka
 
 ## Features:
 
-* [x] Scripts for deployment and system administration
+* [x] Deployment scripts
 * [x] Leader election
 * [ ] Log replication
 * [ ] Cluster membership changes

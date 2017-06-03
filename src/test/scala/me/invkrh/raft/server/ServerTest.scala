@@ -6,9 +6,8 @@ import scala.language.postfixOps
 import akka.actor.{ActorSystem, PoisonPill}
 
 import me.invkrh.raft.exception.{HeartbeatIntervalException, InvalidLeaderException}
-import me.invkrh.raft.kit._
+import me.invkrh.raft.kit.{RaftTestHarness, _}
 import me.invkrh.raft.message._
-import me.invkrh.raft.RaftTestHarness
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 

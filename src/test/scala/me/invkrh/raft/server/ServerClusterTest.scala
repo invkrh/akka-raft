@@ -7,12 +7,12 @@ import scala.language.postfixOps
 import akka.pattern.ask
 import akka.util.Timeout
 
-import me.invkrh.raft.message.{Command, CommandResponse, Init}
-import me.invkrh.raft.RaftTestHarness
+import me.invkrh.raft.kit.RaftTestHarness
+import me.invkrh.raft.message.{Command, CommandResponse, Membership}
 
-class ClusterTest extends RaftTestHarness("ClusterSpec") { self =>
+class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
 
-  "Cluster" should {
+  "Server cluster" should {
     "work well" in {
       val num = 5
       val memberDict = List
@@ -24,7 +24,7 @@ class ClusterTest extends RaftTestHarness("ClusterSpec") { self =>
         .toMap
 
       memberDict foreach {
-        case (_, serverRef) => serverRef ! Init(memberDict)
+        case (_, serverRef) => serverRef ! Membership(memberDict)
       }
 
       implicit val timeout = Timeout(5 seconds)

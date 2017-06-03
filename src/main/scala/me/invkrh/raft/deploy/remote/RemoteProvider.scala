@@ -1,4 +1,4 @@
-package me.invkrh.raft.deploy
+package me.invkrh.raft.deploy.remote
 
 import java.net.{Inet4Address, InetAddress, NetworkInterface}
 
@@ -6,15 +6,16 @@ import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import akka.actor.ActorSystem
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 
-import me.invkrh.raft.util.Logging
+import me.invkrh.raft.deploy.raftSystemName
+import me.invkrh.raft.util.{CanonicalAddress, Logging}
 
 trait RemoteProvider extends Logging {
-  val systemName: String = "RemoteSystem"
+  val systemName: String = raftSystemName
 
   def systemShutdownHook(): Unit = {
-    logInfo(s"System [$systemName] has been shut down")
+    logInfo(s"System has been shut down")
   }
 
   def findLocalInetAddress(): String = {
@@ -76,5 +77,10 @@ trait RemoteProvider extends Logging {
       systemShutdownHook()
     }
     sys
+  }
+
+  def createPrecursorSystem(config: Config): ActorSystem = {
+    val address = CanonicalAddress(config.getString("cluster.precursor"))
+    createSystem(address.hostName, address.port)
   }
 }

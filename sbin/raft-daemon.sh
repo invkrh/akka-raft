@@ -2,7 +2,14 @@
 
 source $(dirname "$0")/raft-env.sh
 
-export CONF=$RAFT_HOME/config/raft.conf
+if [ -z "${RAFT_HOME}" ]; then
+  export RAFT_HOME="$(cd "`dirname "$0"`"/..; pwd)"
+fi
 
-java -cp $RAFT_HOME/build/akka-raft-assembly-0.1.0.jar \
-me.invkrh.raft.deploy.daemon.DaemonSystem $CONF
+if [ -z "${RAFT_CONF}" ]; then
+  export RAFT_CONF="$RAFT_HOME/config/raft.conf"
+fi
+
+export MAIN_CLASS=me.invkrh.raft.deploy.Daemon
+
+java -cp $RAFT_HOME/build/akka-raft-assembly-0.1.0.jar $MAIN_CLASS $RAFT_CONF $@

@@ -1,15 +1,16 @@
-package me.invkrh.raft.deploy.coordinator
+package me.invkrh.raft.deploy.bootstrap
 
 import akka.actor.{Actor, ActorRef, Props}
 
-import me.invkrh.raft.message.{Init, Register, ServerId, ServerIdRequest}
+import me.invkrh.raft.message.{Membership, Register, ServerId, ServerIdRequest}
+import me.invkrh.raft.util.Logging
 
 object ServerInitializer {
   def props(initialSize: Int): Props =
     Props(new ServerInitializer(initialSize))
 }
 
-class ServerInitializer(initialSize: Int) extends Actor {
+class ServerInitializer(initialSize: Int) extends Actor with Logging {
 
   private var membership: Map[Int, ActorRef] = Map()
   private var memberCount = 0
@@ -24,14 +25,11 @@ class ServerInitializer(initialSize: Int) extends Actor {
       }
     case Register(id) =>
       membership = membership.updated(id, sender)
-      // scalastyle:off println
-      println(s"[${membership.size}/$initialSize] Find server at: ${sender().path}")
-      // scalastyle:on println
+      logInfo(s"[${membership.size}/$initialSize] Find server at: ${sender().path}")
       if (membership.size == initialSize) {
-        membership foreach { case (_, server) => server ! Init(membership) }
-        // scalastyle:off println
-        println("All servers are initialized")
-        // scalastyle:on println
+        membership foreach { case (_, server) => server ! Membership(membership) }
+        logInfo("All servers are initialized")
+        logInfo("Shutting down initializer")
         context.stop(self)
       }
   }
