@@ -188,12 +188,14 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
   "Candidate" should {
     "relaunch RequestVote every election time" in {
+      val electionTimeout = 1.second
       val checker = new CandidateEndPointChecker()
+        .setElectionTime(electionTimeout)
       checker
         .setActions(
-          Within(150 millis, 200 millis, Expect(RequestVote(2, checker.getId, 0, 0))),
-          Within(150 millis, 200 millis, Expect(RequestVote(3, checker.getId, 0, 0))),
-          Within(150 millis, 200 millis, Expect(RequestVote(4, checker.getId, 0, 0)))
+          Within(electionTimeout, electionTimeout, Expect(RequestVote(2, checker.getId, 0, 0))),
+          Within(electionTimeout, electionTimeout, Expect(RequestVote(3, checker.getId, 0, 0))),
+          Within(electionTimeout, electionTimeout, Expect(RequestVote(4, checker.getId, 0, 0)))
         )
         .run()
     }

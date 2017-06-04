@@ -23,30 +23,27 @@ class DaemonTest extends RaftTestHarness("DaemonSpec") {
       }
     }
 
-    val configWithAnotherPort =
-      config.withValue("cluster.precursor", ConfigValueFactory fromAnyRef "localhost:6000")
-
     "throw UnreachableAddressException when joining and precusor system can not resolved" in {
       intercept[UnreachableAddressException] {
-        Daemon(configWithAnotherPort, "join")
+        Daemon(config, "join")
       }
     }
 
     "throw UnreachableAddressException when stopping and precusor system can not resolved" in {
       intercept[UnreachableAddressException] {
-        Daemon(configWithAnotherPort, "stop")
+        Daemon(config, "stop")
       }
     }
 
     "throw UnreachableAddressException when stopping-all and precusor system can not resolved" in {
       intercept[UnreachableAddressException] {
-        Daemon(configWithAnotherPort, "stop-all")
+        Daemon(config, "stop-all")
       }
     }
 
     "throw InvalidArgumentException when action is not defined" in {
       intercept[InvalidArgumentException] {
-        Daemon(configWithAnotherPort, "other")
+        Daemon(config, "other")
       }
     }
   }

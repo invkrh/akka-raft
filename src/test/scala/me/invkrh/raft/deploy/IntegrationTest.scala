@@ -19,7 +19,7 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) { // Test
       /**
        * Add two more server
        */
-      Thread.sleep(10000) // Wait for initializer start
+      Thread.sleep(5000) // Wait for initializer start
       val nonPrecursorServerNumber = config.getInt("cluster.quorum") * 2 - 1 - 1
       1 to nonPrecursorServerNumber foreach { _ =>
         Daemon(config, "join")

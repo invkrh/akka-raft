@@ -64,11 +64,12 @@ case class Delay(sleep: FiniteDuration, action: ProbeCheck) extends ProbeCheck {
 case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeCheck*)(
   implicit system: ActorSystem
 ) extends ProbeCheck {
+  val loosenFactor = 0.1
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     val minMS = min.toMillis
     val maxMS = max.toMillis
     val pb = TestProbe()
-    pb.within(minMS * 0.9 millis, maxMS * 1.1 millis) {
+    pb.within(minMS * (1 - loosenFactor).millis, maxMS * (1 + loosenFactor).millis) {
       actions foreach { _.execute(server, probes) }
     }
   }
