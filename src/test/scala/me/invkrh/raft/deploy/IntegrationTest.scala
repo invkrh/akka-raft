@@ -52,7 +52,7 @@ class IntegrationTest extends TestHarness { self =>
         )(firstLauncher.system, timeoutDuration)
 
       /**
-       * Get leader id after election
+       * Check leader has been elected
        */
       assertResult(true) {
         val status = Await.result((serverRef ? GetStatus).mapTo[Status], timeoutDuration)
@@ -60,7 +60,16 @@ class IntegrationTest extends TestHarness { self =>
         status.leader.nonEmpty
       }
 
-      // TODO: stop system
+      /**
+       * Stop systems
+       */
+      launchers foreach { l =>
+        l.system.terminate()
+        // scalastyle:off
+        Await.ready(l.system.whenTerminated, Duration.Inf)
+        // scalastyle:on
+        logInfo(s"Launcher at ${l.address} has been shut down")
+      }
     }
   }
 }

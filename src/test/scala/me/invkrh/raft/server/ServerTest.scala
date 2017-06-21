@@ -187,6 +187,25 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
   }
 
   "Candidate" should {
+
+    "memorize leaderID after becoming following and receiving heartbeat" in {
+      val leaderId = 20
+      val term = 10
+      val checker = new CandidateEndPointChecker()
+      checker
+        .setActions(
+          Tell(RequestVote(term, leaderId, 0, 0)),
+          Expect(RequestVoteResult(term, success = true)),
+          Tell(GetStatus),
+          Expect(Status(checker.getId, term, ServerState.Follower, None)),
+          Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntriesResult(term, success = true)),
+          Tell(GetStatus),
+          Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
+        )
+        .run()
+    }
+
     "relaunch RequestVote every election time" in {
       val electionTimeout = 1.second
       val checker = new CandidateEndPointChecker()

@@ -219,7 +219,7 @@ class Server(
                 InvalidLeaderException(id, hb.leaderId, hb.term)
               )
             }
-            curLeaderId = Some(hb.leaderId) // TODO: Add test
+            curLeaderId = Some(hb.leaderId)
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
             electionTimer.restart()
