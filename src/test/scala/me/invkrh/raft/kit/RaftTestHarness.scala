@@ -11,6 +11,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
 import me.invkrh.raft.deploy.remote.RemoteProvider
+import me.invkrh.raft.util.{InetUtils, Logging}
 
 object RaftTestHarness {
   def localSystem(name: String): ActorSystem = {
@@ -22,9 +23,11 @@ object RaftTestHarness {
   def remoteSystem(name: String): ActorSystem = {
     new RemoteProvider {
       override val systemName: String = name
-    }.createSystem()
+      override var host: String = InetUtils.findLocalInetAddress()
+      override var port: Int = 0
+    }.system
   }
-  def testSystem(name: String, withRemote: Boolean): ActorSystem = {
+  def getSystem(name: String, withRemote: Boolean): ActorSystem = {
     if (withRemote) {
       remoteSystem(name)
     } else {
@@ -33,18 +36,18 @@ object RaftTestHarness {
   }
 }
 
-abstract class RaftTestHarness(specName: String, withRemote: Boolean = false)
-    extends TestKit(RaftTestHarness.testSystem(specName, withRemote))
-    with ImplicitSender
-    with WordSpecLike
-    with BeforeAndAfterAll {
+trait TestHarness extends WordSpecLike with BeforeAndAfterAll with Logging {
+  implicit val config: Config =
+    ConfigFactory.parseFile(new File(getClass.getResource("/raft.conf").getPath))
+}
 
-  val config: Config =
-    ConfigFactory.parseFile(new File(getClass.getResource(s"/raft.conf").getPath))
+abstract class RaftTestHarness(specName: String, isRemote: Boolean = false)
+    extends TestKit(RaftTestHarness.getSystem(specName, isRemote))
+    with ImplicitSender
+    with TestHarness {
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }
-
 }

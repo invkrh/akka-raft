@@ -1,9 +1,17 @@
 package me.invkrh.raft.deploy
 
-import me.invkrh.raft.deploy.remote.PrecursorSystemResolver
-import me.invkrh.raft.kit.RaftTestHarness
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
-class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) { // TestHarness ?
+import akka.pattern.ask
+import akka.util.Timeout
+
+import me.invkrh.raft.deploy.remote.{Initiator, Launcher}
+import me.invkrh.raft.kit.TestHarness
+import me.invkrh.raft.message.{GetStatus, Status}
+import me.invkrh.raft.util.ActorRefUtils
+
+class IntegrationTest extends TestHarness { self =>
 
   /**
    * This test will use remote system define in the main function
@@ -14,30 +22,45 @@ class IntegrationTest extends RaftTestHarness("IntegrationSpec", true) { // Test
       /**
        * Start precursor
        */
-      Daemon(config, "init")
+      val initiator = new Initiator()
+      initiator.main(Array())
+      Thread.sleep(5000) // Wait for initiator to start
 
       /**
        * Add two more server
        */
-      Thread.sleep(5000) // Wait for initializer start
-      val nonPrecursorServerNumber = config.getInt("cluster.quorum") * 2 - 1 - 1
-      1 to nonPrecursorServerNumber foreach { _ =>
-        Daemon(config, "join")
+      val serverNum = config.getInt("cluster.quorum") * 2 - 1
+      val launchers = 1 to serverNum map { i =>
+        new Launcher()
       }
+
+      launchers.zipWithIndex foreach {
+        case (launcher, index) =>
+          launcher.main(Array("--port", 4242 + index + "", "--init", initiator.address))
+      }
+      Thread.sleep(10000) // Wait for leader election
+
+      implicit val timeoutDuration = 5.seconds
+      implicit val timeout = Timeout(timeoutDuration)
+
+      val firstLauncher = launchers.head
+      val serverRef =
+        ActorRefUtils.resolveRefByName(
+          firstLauncher.systemName,
+          firstLauncher.address,
+          raftServerName + "*"
+        )(firstLauncher.system, timeoutDuration)
 
       /**
        * Get leader id after election
        */
-      Thread.sleep(5000) // Wait for leader election
-      val precursorAddress = config.getString("cluster.precursor")
       assertResult(true) {
-        new PrecursorSystemResolver(precursorAddress).leaderID.nonEmpty
+        val status = Await.result((serverRef ? GetStatus).mapTo[Status], timeoutDuration)
+        logInfo("Status = " + status)
+        status.leader.nonEmpty
       }
 
-      /**
-       * Stop all servers
-       */
-      Daemon(config, "stop-all")
+      // TODO: stop system
     }
   }
 }

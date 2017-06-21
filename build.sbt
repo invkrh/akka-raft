@@ -7,12 +7,13 @@ scalaVersion := "2.11.8"
 // scalacOptions += "-feature"
 logBuffered in Test := false
 
-// since some threads are created by user code,
+// since multiples threads are created by user code,
 // fork can manage these threads when user code returns in sbt's jvm process
 fork := true
 
 // since some tests share the same hostname and port,
 // parallelExecution is disabled instead of creating an ad-hoc config file for each test
+// to avoid port conflict
 parallelExecution in Test := false
 
 test in assembly := {}

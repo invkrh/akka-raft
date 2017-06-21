@@ -3,6 +3,6 @@ package me.invkrh.raft
 package object deploy {
   val raftSystemName = "raft-system"
   val raftServerName = "raft-server"
-  val serverInitializerName = "initializer"
-  val serverSpawnerName = "spawner"
+  val clusterInitiatorName = "cluster-initiator"
+  val serverLauncherName = "server-launcher"
 }

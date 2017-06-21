@@ -1,13 +1,7 @@
 package me.invkrh.raft.exception
 
-import java.nio.file.Path
-
-import akka.actor.ActorRef
-
-import me.invkrh.raft.message.RaftMessage
-
 final case class HeartbeatIntervalException()
-    extends IllegalArgumentException("Heartbeat interval should be smaller than the election time")
+    extends RuntimeException("Heartbeat interval should be smaller than the election time")
 
 final case class InvalidLeaderException(local: Int, received: Int, term: Int)
     extends RuntimeException(
@@ -17,13 +11,14 @@ final case class InvalidLeaderException(local: Int, received: Int, term: Int)
 final case class CandidateHasLeaderException(leaderID: Int)
     extends RuntimeException(s"Leader should be empty, but $leaderID found")
 
-final case class RaftConfigurationFileNotFoundException(configFilePath: Path)
-    extends RuntimeException(s"Raft conf file does not exist: $configFilePath")
+final case class RaftConfigFileNotFoundException(path: String)
+    extends RuntimeException(s"Can not find config file under $path")
 
-final case class UnexpectedSenderException(msg: RaftMessage, sender: ActorRef)
-    extends RuntimeException(
-      s"Receive message [$msg] from unknown sender [${sender.path.address}]"
-    )
+final case class RaftConfigDirectoryNotFoundException()
+    extends RuntimeException(s"Can not retrieve config directory from System Env")
+
+final case class UnexpectedSenderException(msg: String, senderAddr: String)
+    extends RuntimeException(s"Receive message [$msg] from unexpected sender [$senderAddr]")
 
 final case class MalformedAddressException(address: String)
     extends RuntimeException(s"Server address is not valid: $address")
@@ -31,5 +26,5 @@ final case class MalformedAddressException(address: String)
 final case class UnreachableAddressException(address: String)
     extends RuntimeException(s"Address [$address] can not be reached")
 
-final case class InvalidArgumentException(argsStr: String)
+final case class InvalidArgumentsException(argsStr: String)
     extends RuntimeException(s"Invalid arguments: $argsStr")

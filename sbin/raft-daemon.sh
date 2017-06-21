@@ -19,6 +19,7 @@ shift
 class=$1
 shift
 instance=$1
+shift
 
 if [ "$SPARK_IDENT_STRING" = "" ]; then
     export RAFT_IDENT_STRING="${USER/./}"
@@ -50,20 +51,20 @@ function raft_rotate_log () {
     log=$1;
     num=5;
     if [ -n "$2" ]; then
-	num=$2
+	    num=$2
     fi
     if [ -f "$log" ]; then # rotate logs
-	while [ $num -gt 1 ]; do
-	    prev=`expr $num - 1`
-	    [ -f "$log.$prev" ] && mv "$log.$prev" "$log.$num"
-	    num=$prev
-	done
-	mv "$log" "$log.$num";
+        while [ $num -gt 1 ]; do
+            prev=`expr $num - 1`
+            [ -f "$log.$prev" ] && mv "$log.$prev" "$log.$num"
+            num=$prev
+        done
+        mv "$log" "$log.$num";
     fi
 }
 
 function init() {
-    java -cp $RAFT_HOME/build/akka-raft-assembly-0.1.0.jar -Dconf.dir=${RAFT_CONF_DIR} $@
+    java -cp $RAFT_HOME/build/akka-raft-assembly-0.1.0.jar $@
 }
 
 function join() {
@@ -72,15 +73,15 @@ function join() {
     if [ -f "$pid" ]; then
         TARGET_ID="$(cat "$pid")"
         if [[ $(ps -p "$TARGET_ID" -o comm=) =~ "java" ]]; then
-            echo "$main_class running as process $TARGET_ID.  Stop it first."
+            echo "$class running as process $TARGET_ID.  Stop it first."
             exit 1
         fi
     fi
 
     raft_rotate_log "$log"
-    echo "starting $main_class, logging to $log"
+    echo "starting $class, logging to $log"
 
-    command="java -cp $RAFT_HOME/build/akka-raft-assembly-0.1.0.jar -Dconf.dir=${RAFT_CONF_DIR} $@"
+    command="java -cp $RAFT_HOME/build/akka-raft-assembly-0.1.0.jar $@"
     nohup $command >> $log 2>&1 < /dev/null &
     newpid="$!"
 
@@ -118,13 +119,13 @@ case $option in
         if [ -f $pid ]; then
             TARGET_ID="$(cat "$pid")"
             if [[ $(ps -p "$TARGET_ID" -o comm=) =~ "java" ]]; then
-                echo "stopping $command"
+                echo "stopping $class"
                 kill "$TARGET_ID" && rm -f "$pid"
             else
-                echo "no $command to stop"
+                echo "no $class to stop"
             fi
         else
-          echo "no $command to stop"
+          echo "no $class to stop"
         fi
         ;;
 
@@ -132,14 +133,14 @@ case $option in
         if [ -f $pid ]; then
             TARGET_ID="$(cat "$pid")"
             if [[ $(ps -p "$TARGET_ID" -o comm=) =~ "java" ]]; then
-                echo $main_class is running.
+                echo $class is running.
                 exit 0
             else
-                echo $pid file is present but $main_class not running
+                echo $pid file is present but $class not running
                 exit 1
             fi
         else
-            echo $main_class not running.
+            echo $class not running.
             exit 2
         fi
         ;;

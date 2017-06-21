@@ -21,10 +21,12 @@ object Server {
     if (!assert) throw cause
   }
 
-  def props(id: Int,
-            minElectionTime: FiniteDuration,
-            maxElectionTime: FiniteDuration,
-            tickTime: FiniteDuration): Props = {
+  def props(
+    id: Int,
+    minElectionTime: FiniteDuration,
+    maxElectionTime: FiniteDuration,
+    tickTime: FiniteDuration
+  ): Props = {
     checkOrThrow(minElectionTime > tickTime, HeartbeatIntervalException())
     Props(new Server(id, minElectionTime, maxElectionTime, tickTime))
   }
@@ -33,11 +35,13 @@ object Server {
     props(id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime)
   }
 
-  def run(id: Int,
-          minElectionTime: FiniteDuration,
-          maxElectionTime: FiniteDuration,
-          tickTime: FiniteDuration,
-          name: String)(implicit system: ActorSystem): ActorRef = {
+  def run(
+    id: Int,
+    minElectionTime: FiniteDuration,
+    maxElectionTime: FiniteDuration,
+    tickTime: FiniteDuration,
+    name: String
+  )(implicit system: ActorSystem): ActorRef = {
     system.actorOf(props(id, minElectionTime, maxElectionTime, tickTime), name)
   }
 
@@ -46,11 +50,12 @@ object Server {
   }
 }
 
-class Server(val id: Int,
-             minElectionTime: FiniteDuration,
-             maxElectionTime: FiniteDuration,
-             tickTime: FiniteDuration)
-    extends Actor
+class Server(
+  val id: Int,
+  minElectionTime: FiniteDuration,
+  maxElectionTime: FiniteDuration,
+  tickTime: FiniteDuration
+) extends Actor
     with Logging {
 
   import context._
@@ -81,10 +86,12 @@ class Server(val id: Int,
     heartBeatTimer.stop()
   }
 
-  def retry[T](ft: Future[T],
-               delay: FiniteDuration,
-               retries: Int,
-               retryMsg: String = ""): Future[T] = {
+  def retry[T](
+    ft: Future[T],
+    delay: FiniteDuration,
+    retries: Int,
+    retryMsg: String = ""
+  ): Future[T] = {
     ft recoverWith {
       case e if retries > 0 =>
         logWarn(retryMsg + " current error: " + e)
@@ -128,7 +135,7 @@ class Server(val id: Int,
               logInfo(s"New leader is detected by receiving $res from ${follower.path}")
               (Math.max(curMaxTerm, res.term), count)
             } else if (res.term == curTerm) {
-              logInfo(s"Receive $res from ${follower.path}")
+              logDebug(s"Receive $res from ${follower.path}")
               if (res.success) {
                 (curMaxTerm, count + 1)
               } else {
@@ -160,7 +167,7 @@ class Server(val id: Int,
         )
       }
     }
-    logInfo(s"=== end of processing ${callback.request} ===")
+    logDebug(s"=== end of processing ${callback.request} ===")
   }
 
   def issueVoteRequest(): Unit = {
@@ -205,13 +212,14 @@ class Server(val id: Int,
             sender ! AppendEntriesResult(hb.term, success = true)
             becomeFollower(hb.term, hb.leaderId)
           case ServerState.Follower =>
-            logInfo(s"Heartbeat from leader ${hb.leaderId} at term ${hb.term}")
+            logDebug(s"Heartbeat from leader ${hb.leaderId} at term ${hb.term}")
             curLeaderId foreach { leaderId =>
               checkOrThrow(
                 leaderId == hb.leaderId,
                 InvalidLeaderException(id, hb.leaderId, hb.term)
               )
             }
+            curLeaderId = Some(hb.leaderId) // TODO: Add test
             // TODO: Add precessing
             sender ! AppendEntriesResult(hb.term, success = true)
             electionTimer.restart()
@@ -313,7 +321,7 @@ class Server(val id: Int,
 
   def leader: Receive =
     callBackEndPoint { majCnt =>
-      logInfo(
+      logDebug(
         s"Heartbeat for term $curTerm is ended since majority is reached " +
           s"($majCnt / ${members.size}), committing logs"
       )

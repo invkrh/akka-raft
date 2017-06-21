@@ -1,4 +1,4 @@
-package me.invkrh.raft.deploy.bootstrap
+package me.invkrh.raft.deploy.actor
 
 import java.io.File
 
@@ -15,16 +15,18 @@ import me.invkrh.raft.kit.{ExceptionDetector, RaftTestHarness}
 import me.invkrh.raft.message.{ServerId, ServerIdRequest}
 import me.invkrh.raft.server.ServerConf
 
-class ServerSpawnerTest extends RaftTestHarness("ServerSpawnerTest") {
-  "ServerSpawner" should {
+class ServerLauncherTest extends RaftTestHarness("ServerLauncherTest") {
+  "ServerLauncher" should {
     val raftConfigFilePath = getClass.getResource(s"/raft.conf").getPath
     val config = ConfigFactory.parseFile(new File(raftConfigFilePath))
     val serverConf = ServerConf(config.getConfig("server"))
 
     "shutdown the system when ServerIdRequest is rejected" in {
       new RemoteProvider {
-        val system: ActorSystem = createSystem()
-        val spawnerRef: ActorRef = system.actorOf(ServerSpawner.props(self, serverConf))
+        override var host: String = "localhost"
+        override var port: Int = 0
+
+        val spawnerRef: ActorRef = system.actorOf(ServerLauncher.props(self, serverConf))
         val path = spawnerRef.path
         expectMsg(ServerIdRequest)
         spawnerRef ! ServerId(-1)
@@ -39,7 +41,7 @@ class ServerSpawnerTest extends RaftTestHarness("ServerSpawnerTest") {
       val probe = TestProbe()
       val supervisor: ActorRef =
         system.actorOf(Props(new ExceptionDetector(s"spawner", probe.ref)))
-      supervisor ! ServerSpawner.props(probe.ref, serverConf)
+      supervisor ! ServerLauncher.props(probe.ref, serverConf)
       val spawnerRef = expectMsgType[ActorRef]
       probe.expectMsg(ServerIdRequest)
       spawnerRef ! ServerId(0)
