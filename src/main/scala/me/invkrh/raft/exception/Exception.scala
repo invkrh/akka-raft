@@ -15,7 +15,7 @@ final case class RaftConfigFileNotFoundException(path: String)
     extends RuntimeException(s"Can not find config file under $path")
 
 final case class RaftConfigDirectoryNotFoundException()
-    extends RuntimeException(s"Can not retrieve config directory from System Env")
+    extends RuntimeException(s"Can not retrieve config directory location from System Env")
 
 final case class UnexpectedSenderException(msg: String, senderAddr: String)
     extends RuntimeException(s"Receive message [$msg] from unexpected sender [$senderAddr]")
