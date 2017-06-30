@@ -9,7 +9,7 @@ import akka.util.Timeout
 import me.invkrh.raft.deploy.remote.{Initiator, Launcher}
 import me.invkrh.raft.kit.TestHarness
 import me.invkrh.raft.message.{GetStatus, Status}
-import me.invkrh.raft.util.ActorRefUtils
+import me.invkrh.raft.util.NetworkUtils._
 
 class IntegrationTest extends TestHarness { self =>
 
@@ -45,11 +45,10 @@ class IntegrationTest extends TestHarness { self =>
 
       val firstLauncher = launchers.head
       val serverRef =
-        ActorRefUtils.resolveRefByName(
-          firstLauncher.systemName,
-          firstLauncher.address,
-          raftServerName + "*"
-        )(firstLauncher.system, timeoutDuration)
+        resolveRefByName(firstLauncher.systemName, firstLauncher.address, raftServerName + "*")(
+          firstLauncher.system,
+          timeoutDuration
+        )
 
       /**
        * Check leader has been elected

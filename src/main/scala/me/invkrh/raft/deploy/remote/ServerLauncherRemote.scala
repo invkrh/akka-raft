@@ -2,15 +2,15 @@ package me.invkrh.raft.deploy.remote
 
 import scala.concurrent.duration._
 
-import me.invkrh.raft.deploy.{clusterInitiatorName, serverLauncherName}
+import me.invkrh.raft.deploy.{clusterInitiatorName, serverLauncherName, ConfigHolder, RaftConfig}
 import me.invkrh.raft.deploy.actor.ServerLauncher
 import me.invkrh.raft.exception.InvalidArgumentsException
 import me.invkrh.raft.server.ServerConf
-import me.invkrh.raft.util.{ActorRefUtils, CanonicalAddress, ConfigHolder, InetUtils, RaftConfig}
+import me.invkrh.raft.util.NetworkUtils._
 
 trait ServerLauncherRemote extends RemoteProvider { this: ConfigHolder =>
 
-  private val localIP = InetUtils.findLocalInetAddress()
+  private val localIP = findLocalInetAddress()
 
   var host: String = localIP
   var port: Int = 4545
@@ -42,7 +42,7 @@ trait ServerLauncherRemote extends RemoteProvider { this: ConfigHolder =>
     parse(args.toList)
     implicit val resolutionTimeout = config.getInt("cluster.address.resolution.timeout.ms").millis
     val serverConf = ServerConf(config.getConfig("server"))
-    val initRef = ActorRefUtils.resolveRefByName(systemName, initAddr, clusterInitiatorName)
+    val initRef = resolveRefByName(systemName, initAddr, clusterInitiatorName)
     system.actorOf(ServerLauncher.props(initRef, serverConf), serverLauncherName)
   }
 }

@@ -1,5 +1,6 @@
 package me.invkrh.raft.util
 
+import me.invkrh.raft.deploy.RaftConfig
 import me.invkrh.raft.exception.{
   RaftConfigDirectoryNotFoundException,
   RaftConfigFileNotFoundException

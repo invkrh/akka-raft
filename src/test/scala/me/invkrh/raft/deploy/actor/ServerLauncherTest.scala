@@ -5,7 +5,7 @@ import java.io.File
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-import akka.actor.{ActorNotFound, ActorRef, ActorSystem, Props}
+import akka.actor.{ActorNotFound, ActorRef, Props}
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 
@@ -39,12 +39,11 @@ class ServerLauncherTest extends RaftTestHarness("ServerLauncherTest") {
 
     "throw UnexpectedSenderException if ServerId is not sent from initializer" in {
       val probe = TestProbe()
-      val supervisor: ActorRef =
-        system.actorOf(Props(new ExceptionDetector(s"spawner", probe.ref)))
+      val supervisor: ActorRef = system.actorOf(Props(new ExceptionDetector(s"ExDet", probe.ref)))
       supervisor ! ServerLauncher.props(probe.ref, serverConf)
-      val spawnerRef = expectMsgType[ActorRef]
+      val launcherRef = expectMsgType[ActorRef]
       probe.expectMsg(ServerIdRequest)
-      spawnerRef ! ServerId(0)
+      launcherRef ! ServerId(0)
       probe.expectMsgType[UnexpectedSenderException]
     }
   }

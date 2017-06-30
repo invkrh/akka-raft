@@ -2,9 +2,10 @@ package me.invkrh.raft.deploy.remote
 
 import com.typesafe.config.Config
 
+import me.invkrh.raft.deploy.ConfigHolder
 import me.invkrh.raft.exception.{InvalidArgumentsException, MalformedAddressException}
 import me.invkrh.raft.kit.TestHarness
-import me.invkrh.raft.util.{CanonicalAddress, ConfigHolder}
+import me.invkrh.raft.util.NetworkUtils.CanonicalAddress
 
 class Launcher(implicit val config: Config) extends ServerLauncherRemote with ConfigHolder
 

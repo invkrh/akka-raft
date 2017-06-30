@@ -1,7 +1,6 @@
 package me.invkrh.raft.kit
 
 import java.io.File
-import java.net.URL
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContextExecutor
@@ -12,7 +11,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
 import me.invkrh.raft.deploy.remote.RemoteProvider
-import me.invkrh.raft.util.{InetUtils, Logging}
+import me.invkrh.raft.util.{Logging, NetworkUtils}
 
 trait TestHarness extends WordSpecLike with BeforeAndAfterAll with Logging {
   val configFilePath: String = getClass.getResource("/raft.conf").getPath
@@ -43,7 +42,7 @@ object RaftTestHarness {
   def remoteSystem(name: String): ActorSystem = {
     new RemoteProvider {
       override val systemName: String = name
-      override var host: String = InetUtils.findLocalInetAddress()
+      override var host: String = NetworkUtils.findLocalInetAddress()
       override var port: Int = 0
     }.system
   }

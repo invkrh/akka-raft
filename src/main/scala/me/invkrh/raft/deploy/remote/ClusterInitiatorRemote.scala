@@ -1,12 +1,12 @@
 package me.invkrh.raft.deploy.remote
 
+import me.invkrh.raft.deploy._
 import me.invkrh.raft.deploy.actor.ClusterInitiator
-import me.invkrh.raft.deploy.clusterInitiatorName
 import me.invkrh.raft.exception.InvalidArgumentsException
-import me.invkrh.raft.util.{ConfigHolder, InetUtils, RaftConfig}
+import me.invkrh.raft.util.NetworkUtils._
 
 trait ClusterInitiatorRemote extends RemoteProvider { this: ConfigHolder =>
-  var host: String = InetUtils.findLocalInetAddress()
+  var host: String = findLocalInetAddress()
   var port: Int = 9090
 
   if (System.getenv("RAFT_INITIATOR_HOST") != null) {

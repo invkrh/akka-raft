@@ -20,8 +20,8 @@ final case class RaftConfigDirectoryNotFoundException()
 final case class UnexpectedSenderException(msg: String, senderAddr: String)
     extends RuntimeException(s"Receive message [$msg] from unexpected sender [$senderAddr]")
 
-final case class MalformedAddressException(address: String)
-    extends RuntimeException(s"Server address is not valid: $address")
+final case class MalformedAddressException(address: String, reason: String)
+    extends RuntimeException(s"Address $address is not valid: $reason")
 
 final case class UnreachableAddressException(address: String)
     extends RuntimeException(s"Address [$address] can not be reached")

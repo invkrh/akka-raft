@@ -2,9 +2,9 @@ package me.invkrh.raft.deploy.remote
 
 import com.typesafe.config.Config
 
+import me.invkrh.raft.deploy.ConfigHolder
 import me.invkrh.raft.exception.InvalidArgumentsException
 import me.invkrh.raft.kit.TestHarness
-import me.invkrh.raft.util.ConfigHolder
 
 class Initiator(implicit val config: Config) extends ClusterInitiatorRemote with ConfigHolder
 
