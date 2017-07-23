@@ -9,11 +9,11 @@ import akka.actor.{ActorNotFound, ActorRef, Props}
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 
+import me.invkrh.raft.core.ServerConf
 import me.invkrh.raft.deploy.remote.RemoteProvider
 import me.invkrh.raft.exception.UnexpectedSenderException
 import me.invkrh.raft.kit.{ExceptionDetector, RaftTestHarness}
 import me.invkrh.raft.message.{ServerId, ServerIdRequest}
-import me.invkrh.raft.server.ServerConf
 
 class ServerLauncherTest extends RaftTestHarness("ServerLauncherTest") {
   "ServerLauncher" should {

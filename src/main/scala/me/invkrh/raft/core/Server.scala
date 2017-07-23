@@ -1,4 +1,4 @@
-package me.invkrh.raft.server
+package me.invkrh.raft.core
 
 import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future

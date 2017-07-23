@@ -1,4 +1,4 @@
-package me.invkrh.raft.server
+package me.invkrh.raft.core
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -23,18 +23,20 @@ trait Timer {
   }
 }
 
-class RandomizedTimer(min: FiniteDuration,
-                      max: FiniteDuration,
-                      event: TimerMessage)(implicit scheduler: Scheduler, target: ActorRef)
-    extends Timer {
+class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: TimerMessage)(
+  implicit scheduler: Scheduler,
+  target: ActorRef
+) extends Timer {
   def start(): Unit = {
     val rd = min.toMillis + Random.nextInt((max.toMillis - min.toMillis + 1).toInt)
     cancellable = scheduler.scheduleOnce(rd milliseconds, target, event)
   }
 }
 
-class PeriodicTimer(duration: FiniteDuration, event: TimerMessage)(implicit scheduler: Scheduler,
-                                                                   target: ActorRef)
+class PeriodicTimer(
+  duration: FiniteDuration,
+  event: TimerMessage
+)(implicit scheduler: Scheduler, target: ActorRef)
     extends Timer {
   def start(): Unit = {
     cancellable = scheduler.schedule(Duration.Zero, duration, target, event)

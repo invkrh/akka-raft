@@ -1,9 +1,10 @@
-package me.invkrh.raft.server
+package me.invkrh.raft.core
 
 import akka.actor.{Actor, ActorSystem, Props}
 
 case class Holder(arr: Array[Int])
 
+// scalastyle:off println
 class AddrChecker extends Actor {
   override def receive: Receive = {
     case h: Holder =>
@@ -31,3 +32,4 @@ object SanityTest extends App {
   Thread.sleep(3000)
   array(2) = 100
 }
+// scalastyle:on println

@@ -1,13 +1,15 @@
-package me.invkrh.raft.server
+package me.invkrh.raft.core
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import com.typesafe.config.Config
 
-case class ServerConf(minElectionTime: FiniteDuration,
-                      maxElectionTime: FiniteDuration,
-                      tickTime: FiniteDuration)
+case class ServerConf(
+  minElectionTime: FiniteDuration,
+  maxElectionTime: FiniteDuration,
+  tickTime: FiniteDuration
+)
 
 object ServerConf {
   def apply(config: Config): ServerConf = {

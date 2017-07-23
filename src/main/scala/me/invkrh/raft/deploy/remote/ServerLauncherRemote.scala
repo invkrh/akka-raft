@@ -2,10 +2,10 @@ package me.invkrh.raft.deploy.remote
 
 import scala.concurrent.duration._
 
+import me.invkrh.raft.core.ServerConf
 import me.invkrh.raft.deploy.{clusterInitiatorName, serverLauncherName, ConfigHolder, RaftConfig}
 import me.invkrh.raft.deploy.actor.ServerLauncher
 import me.invkrh.raft.exception.InvalidArgumentsException
-import me.invkrh.raft.server.ServerConf
 import me.invkrh.raft.util.NetworkUtils._
 
 trait ServerLauncherRemote extends RemoteProvider { this: ConfigHolder =>

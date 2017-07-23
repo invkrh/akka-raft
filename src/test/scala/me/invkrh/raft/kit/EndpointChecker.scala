@@ -8,8 +8,8 @@ import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.{gracefulStop, AskTimeoutException}
 import akka.testkit.TestProbe
 
+import me.invkrh.raft.core.Server
 import me.invkrh.raft.message.{AppendEntries, LogEntry, Membership, RequestVote, RequestVoteResult}
-import me.invkrh.raft.server.Server
 import me.invkrh.raft.util.UID
 
 sealed trait EndpointChecker {

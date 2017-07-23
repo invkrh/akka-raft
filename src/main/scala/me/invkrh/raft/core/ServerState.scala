@@ -1,4 +1,4 @@
-package me.invkrh.raft.server
+package me.invkrh.raft.core
 
 object ServerState extends Enumeration {
   val Bootstrap = Value("Boot")

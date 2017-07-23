@@ -2,7 +2,7 @@ package me.invkrh.raft.message
 
 import akka.actor.ActorRef
 
-import me.invkrh.raft.server.ServerState
+import me.invkrh.raft.core.ServerState
 
 sealed trait AdminMessage extends RaftMessage
 case class Membership(memberDict: Map[Int, ActorRef]) extends AdminMessage

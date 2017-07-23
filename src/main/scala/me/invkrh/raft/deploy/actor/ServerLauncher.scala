@@ -2,9 +2,9 @@ package me.invkrh.raft.deploy.actor
 
 import akka.actor.{Actor, ActorRef, Props}
 
+import me.invkrh.raft.core.{Server, ServerConf}
 import me.invkrh.raft.exception.UnexpectedSenderException
 import me.invkrh.raft.message.{Register, ServerId, ServerIdRequest}
-import me.invkrh.raft.server.{Server, ServerConf}
 import me.invkrh.raft.util.Logging
 
 object ServerLauncher {
