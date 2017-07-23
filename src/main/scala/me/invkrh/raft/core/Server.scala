@@ -1,14 +1,11 @@
 package me.invkrh.raft.core
 
-import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
-import scala.util.{Failure, Success}
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props, Scheduler}
-import akka.pattern.{after, ask, pipe}
-import akka.util.Timeout
+import akka.pattern.pipe
 
 import me.invkrh.raft.deploy.raftServerName
 import me.invkrh.raft.exception._
@@ -64,19 +61,30 @@ class Server(
 
   implicit val scheduler: Scheduler = system.scheduler
 
+  // Persistent state on all servers
   private var curTerm = 0
+  private var votedFor: Option[Int] = None
+  private var logs: Vector[LogEntry] = Vector(LogEntry(0, Void))
 
+  // Volatile state on all servers
+  @volatile private var commitIndex = 0
+  @volatile private var lastApplied = 0
+
+  // Volatile state on leaders
+  @volatile private var nextIndex = Map[Int, Int]()
+  @volatile private var matchIndex = Map[Int, Int]()
+
+  // Additional state
+  private implicit var members: Map[Int, ActorRef] = Map()
   private var curState: ServerState.Value = ServerState.Bootstrap
   private var curLeaderId: Option[Int] = None
-  private var votedFor: Option[Int] = None
-  private var members: Map[Int, ActorRef] = Map()
-  val clientMessageCache = new MessageCache[ClientMessage]()
 
-  val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
-  val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
-  val logs: ArrayBuffer[LogEntry] = new ArrayBuffer[LogEntry]()
+  val clientMessageCache = new MessageCache[Command]()
+  val electionTimer =
+    new RandomizedTimer(minElectionTime, maxElectionTime, StartElection).setTarget(self)
+  val heartBeatTimer = new PeriodicTimer(tickTime, Tick).setTarget(self)
 
-  override def logPrefix: String = s"[$id-$curState]"
+  override def loggingPrefix: String = s"[$id-$curState]"
 
   override def preStart(): Unit = {}
 
@@ -86,108 +94,127 @@ class Server(
     heartBeatTimer.stop()
   }
 
-  def retry[T](
-    ft: Future[T],
-    delay: FiniteDuration,
-    retries: Int,
-    retryMsg: String = ""
-  ): Future[T] = {
-    ft recoverWith {
-      case e if retries > 0 =>
-        logWarn(retryMsg + " current error: " + e)
-        after(delay, scheduler)(retry(ft, delay, retries - 1, retryMsg))
-    }
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+  // RPC Sender
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+
+//  def distributeRPCRequest(hub: MessageHub): Unit = {
+//    val exchanges = Future.sequence {
+//      members.par.map {
+//        case (followId, ref) => hub.request(followId, ref)
+//      }.seq
+//    }
+//    exchanges pipeTo self
+//  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+  // RPC Receiver
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+
+  def processMessage(request: AppendEntries): Unit = {
+    // TODO
   }
 
-  // TODO: retries is a conf ?
-  // TODO: rethink of the ask pattern, queue with timeout
-  // TODO: use router
-  def distributeRPC(msg: RPCMessage, retries: Int = 1): Unit = {
-    val timeSlice = tickTime / retries
-    implicit val timeout = Timeout(timeSlice) // ask timeout
-    Future
-      .sequence {
-        for {
-          (id, follower) <- members.toSeq if id != this.id
-        } yield {
-          retry(
-            (follower ? msg).mapTo[RPCResult],
-            Duration.Zero,
-            retries,
-            s"Can not reach ${follower.path}, retrying ..."
-          ).map(x => Success(x))
-            .recover { case e => Failure(e) }
-            .map(resp => (follower, resp))
-        }
-      }
-      .map { res =>
-        CallBack(msg, res)
-      } pipeTo self
+  def processMessage(request: RequestVote): Unit = {
+    // TODO
   }
 
-  def processCallBack(callback: CallBack)(majorityHandler: Int => Unit): Unit = {
-    val results = callback.responses
-    val (maxTerm, validReplyCount) = results.foldLeft(curTerm, 1) {
-      case ((curMaxTerm, count), (follower, tryRes)) =>
-        tryRes match {
-          case Success(res) =>
-            if (res.term > curTerm) {
-              logInfo(s"New leader is detected by receiving $res from ${follower.path}")
-              (Math.max(curMaxTerm, res.term), count)
-            } else if (res.term == curTerm) {
-              logDebug(s"Receive $res from ${follower.path}")
-              if (res.success) {
-                (curMaxTerm, count + 1)
-              } else {
-                (curMaxTerm, count)
-              }
-            } else {
-              throw new Exception(
-                s"The term of reply received (${res.term}) must not be smaller than is current " +
-                  s"term ($curTerm)"
-              )
-            }
-          case Failure(e) =>
-            logWarn(
-              s"Can not get ${callback.request} response from ${follower.path} with error: " + e
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+  // Leader / Candidate state updater
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+
+  def processConversation(conversation: RequestVoteConversation): Unit = {
+    var maxTerm = -1
+    var validateCnt = 1 // validated by itself
+    conversation.content foreach {
+      case Exchange(request: RequestVote, response, follId, follRef) =>
+        response match {
+          case RequestVoteResult(term, false) if term > curTerm =>
+            logInfo(
+              s"[Follwer ID = $follId] New leader is detected by receiving $response " +
+                s"(source address: ${follRef.path})"
             )
-            (curMaxTerm, count)
-
+            maxTerm = Math.max(term, maxTerm)
+          case RequestVoteResult(term, false) if term == curTerm =>
+            logInfo(
+              s"[Follwer ID = $follId] already voted or Candidate's log is outdated " +
+                s"(source address: ${follRef.path})"
+            )
+          case RequestVoteResult(term, true) if term == curTerm => validateCnt += 1
+          case RequestTimeout(term) =>
+            logInfo(
+              s"[Follwer ID = $follId] Request time out " +
+                s"(source address: ${follRef.path})"
+            )
+          case _ => throw invalidResponseException(response, curTerm)
         }
     }
+
     if (maxTerm > curTerm) {
       becomeFollower(maxTerm)
     } else {
-      if (validReplyCount > members.size / 2) {
-        majorityHandler(validReplyCount)
-      } else {
+      if (validateCnt > members.size / 2) {
         logInfo(
-          s"Majority is not reached ($validReplyCount / ${members.size}), " +
-            s"a new round will be launched"
+          s"Election for term $curTerm is ended since majority is reached " +
+            s"($validateCnt / ${members.size})"
         )
+        becomeLeader()
+      } else {
+        logInfo(s"Majority is not reached ($validateCnt / ${members.size})")
       }
     }
-    logDebug(s"=== end of processing ${callback.request} ===")
+    logDebug(s"=== end of processing conversation ===")
   }
 
-  def issueVoteRequest(): Unit = {
-    distributeRPC(RequestVote(curTerm, id, 0, 0))
+  def processConversation(conversation: AppendEntriesConversation): Unit = {
+    var maxTerm = -1
+    var validateCnt = 0
+    conversation.content foreach {
+      case Exchange(request: AppendEntries, response, follId, follRef) =>
+        response match {
+          case AppendEntriesResult(term, false) if term > curTerm =>
+            logInfo(
+              s"[Follwer ID = $follId] New leader is detected by receiving $response " +
+                s"(source address: ${follRef.path})"
+            )
+            maxTerm = Math.max(term, maxTerm)
+          case AppendEntriesResult(term, false) if term == curTerm =>
+            nextIndex.updated(follId, nextIndex(follId) - 1)
+          case AppendEntriesResult(term, true) if term == curTerm =>
+            validateCnt += 1
+            matchIndex.updated(follId, request.prevLogIndex + request.entries.size)
+          case RequestTimeout(term) =>
+            logInfo(
+              s"[Follwer ID = $follId] Request time out at $term" +
+                s"(source address: ${follRef.path})"
+            )
+          case _ => throw invalidResponseException(response, curTerm)
+        }
+    }
+
+    if (maxTerm > curTerm) {
+      becomeFollower(maxTerm)
+    } else {
+      if (validateCnt > members.size / 2) {
+        logDebug(
+          s"Heartbeat for term $curTerm is ended since majority is reached " +
+            s"($validateCnt / ${members.size}), committing logs"
+        )
+        // TODO: apply to state machine
+      } else {
+        logInfo(s"Majority is not reached ($validateCnt / ${members.size})")
+      }
+    }
+    logDebug(s"=== end of processing conversation ===")
   }
 
-  def issueHeartbeat(): Unit = {
-    distributeRPC(AppendEntries(curTerm, id, 0, 0, Seq(), 0))
-  }
-
-  def processClientRequest(cmd: Command): Unit = {
-    logInfo("Client command received: " + cmd)
-  }
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+  // End Point
+  //////////////////////////////////////////////////////////////////////////////////////////////////
 
   def adminEndpoint: Receive = {
     case MembershipRequest => sender ! Membership(members)
     case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId)
-    case ShutDown =>
-      sender ! ShutDownACK(id)
-      context.system.terminate()
     // TODO: Add more admin endpoint
   }
 
@@ -196,7 +223,10 @@ class Server(
   }
 
   def tickEndPoint: Receive = {
-    case Tick => issueHeartbeat()
+    case Tick =>
+      LeaderMessageHub(curTerm, id, commitIndex, nextIndex, logs)
+        .distributeRPCRequest(tickTime)
+        .map(AppendEntriesConversation) pipeTo self
   }
 
   def appendEntriesEndPoint: Receive = {
@@ -249,7 +279,7 @@ class Server(
             }
           case ServerState.Candidate | ServerState.Leader =>
             sender ! RequestVoteResult(reqVote.term, success = true)
-            becomeFollower(reqVote.term)
+            becomeFollower(reqVote.term) // leader is not known yet
         }
       }
   }
@@ -258,7 +288,8 @@ class Server(
     case cmd: Command =>
       curState match {
         case ServerState.Leader =>
-          processClientRequest(cmd)
+          logInfo("Client command received: " + cmd)
+          logs = logs :+ LogEntry(curTerm, cmd)
           sender() ! CommandResponse(success = true)
         case ServerState.Candidate =>
           curLeaderId match {
@@ -277,23 +308,36 @@ class Server(
       }
   }
 
-  def callBackEndPoint(majorityHandler: Int => Unit): Receive = {
-    case cb: CallBack => processCallBack(cb)(majorityHandler)
+  def conversationEndPoint: Receive = {
+    case c: AppendEntriesConversation => processConversation(c)
+    case c: RequestVoteConversation => processConversation(c)
   }
 
   def irrelevantMsgEndPoint: Receive = {
     case msg: RaftMessage =>
       logWarn(s"Irrelevant messages found: $msg, from ${sender.path}")
-//      throw IrrelevantMessageException(msg, sender)
   }
 
-  // TODO: Member Management problem, member is added one by one
-  override def receive: Receive =
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+  // Server state conversion
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+
+  // TODO: Member Management problem
+  override def receive: Receive = // Initial state
     adminEndpoint orElse {
-      case Membership(memberDict) =>
-        logInfo(s"Server $id initialized")
-        members = memberDict
-        becomeFollower(curTerm)
+      case Membership(index) =>
+        if (index.nonEmpty) {
+          logInfo(s"Server $id initialized")
+          members = index
+          members foreach {
+            case (svrId, _) =>
+              nextIndex = nextIndex.updated(svrId, 1)
+              matchIndex = matchIndex.updated(svrId, 0)
+          }
+          becomeFollower(0)
+        } else {
+          throw EmptyMembershipException()
+        }
     }
 
   def follower: Receive =
@@ -305,13 +349,7 @@ class Server(
       irrelevantMsgEndPoint
 
   def candidate: Receive =
-    callBackEndPoint { majCnt =>
-      logInfo(
-        s"Election for term $curTerm is ended since majority is reached " +
-          s"($majCnt / ${members.size})"
-      )
-      becomeLeader()
-    } orElse
+    conversationEndPoint orElse
       commandEndPoint orElse
       startElectionEndpoint orElse
       appendEntriesEndPoint orElse
@@ -320,12 +358,7 @@ class Server(
       irrelevantMsgEndPoint
 
   def leader: Receive =
-    callBackEndPoint { majCnt =>
-      logDebug(
-        s"Heartbeat for term $curTerm is ended since majority is reached " +
-          s"($majCnt / ${members.size}), committing logs"
-      )
-    } orElse
+    conversationEndPoint orElse
       commandEndPoint orElse
       tickEndPoint orElse
       appendEntriesEndPoint orElse
@@ -345,7 +378,7 @@ class Server(
         logInfo(s"At term $curTerm, unknown new leader detected")
       }
       curLeaderId = None
-    } else { // New leader is already known
+    } else { // New leader id is given
       logInfo(s"At term $curTerm, new leader $newLeader detected")
       curLeaderId = Some(newLeader)
       for {
@@ -367,7 +400,9 @@ class Server(
     curLeaderId = None
     logInfo(s"Election for term $curTerm started, server $id becomes candidate")
     become(candidate)
-    issueVoteRequest()
+    CandidateMessageHub(curTerm, id, logs)
+      .distributeRPCRequest(minElectionTime)
+      .map(RequestVoteConversation.apply) pipeTo self
     electionTimer.restart()
   }
 
@@ -382,5 +417,4 @@ class Server(
     electionTimer.stop()
     heartBeatTimer.restart()
   }
-
 }

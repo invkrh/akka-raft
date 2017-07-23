@@ -10,35 +10,40 @@ import akka.actor.{ActorRef, Cancellable, Scheduler}
 import me.invkrh.raft.message.TimerMessage
 
 trait Timer {
-  var cancellable: Cancellable = _
-  def start(): Unit
-  def restart(): Unit = {
-    stop()
-    start()
+  protected var target: ActorRef = _
+  protected var cancellable: Cancellable = _
+
+  def setTarget(target: ActorRef): this.type = {
+    this.target = target
+    this
   }
+
+  def start(): Unit
   def stop(): Unit = {
     if (cancellable != null && !cancellable.isCancelled) {
       cancellable.cancel()
     }
   }
+  def restart(): Unit = {
+    stop()
+    start()
+  }
 }
 
 class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: TimerMessage)(
-  implicit scheduler: Scheduler,
-  target: ActorRef
+  implicit scheduler: Scheduler
 ) extends Timer {
   def start(): Unit = {
+    require(target != null, "Timer target can not be null")
     val rd = min.toMillis + Random.nextInt((max.toMillis - min.toMillis + 1).toInt)
     cancellable = scheduler.scheduleOnce(rd milliseconds, target, event)
   }
 }
 
-class PeriodicTimer(
-  duration: FiniteDuration,
-  event: TimerMessage
-)(implicit scheduler: Scheduler, target: ActorRef)
+class PeriodicTimer(duration: FiniteDuration, event: TimerMessage)(implicit scheduler: Scheduler)
     extends Timer {
   def start(): Unit = {
+    require(target != null, "Timer target can not be null")
     cancellable = scheduler.schedule(Duration.Zero, duration, target, event)
   }
 }

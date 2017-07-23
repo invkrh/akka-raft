@@ -30,17 +30,6 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       expectNoMsg()
       server ! PoisonPill
     }
-
-    "stop the system if ShutDown message is received" in {
-      val system = ActorSystem("StopTest")
-      val server =
-        system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis))
-      server ! ShutDown
-      assertResult(true) {
-        Thread.sleep(5000)
-        system.whenTerminated.isCompleted
-      }
-    }
   }
 
   "Follower" should {
@@ -135,8 +124,8 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)), // 1 is the id of leader
           Expect(AppendEntriesResult(2, success = true)), // leader is set
-          Tell(Command("x", 1)), // reuse leader ref as client ref
-          Tell(Command("y", 2)),
+          Tell(Set("x", 1)), // reuse leader ref as client ref
+          Tell(Set("y", 2)),
           FishForMsg { case _: Command => true },
           FishForMsg { case _: Command => true }
         )
@@ -144,12 +133,12 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     }
 
     "respond command received at term = 0 (right after init) when it becomes leader" in {
-      val checker = new FollowerEndPointChecker()
+      val checker = new FollowerEndPointChecker().setId(13)
       checker
         .setElectionTime(1 seconds) // keep server in initialized follower state longer
         .setActions(
-          Tell(Command("x", 1)), // reuse probe as client
-          Tell(Command("y", 2)), // reuse probe as client
+          Tell(Set("x", 1)), // reuse probe as client
+          Tell(Set("y", 2)), // reuse probe as client
           Expect(RequestVote(1, checker.getId, 0, 0)),
           Reply(RequestVoteResult(1, success = true)),
           FishForMsg { case CommandResponse(true, _) => true },
@@ -223,8 +212,8 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       "when it finally become leader" in {
       new CandidateEndPointChecker()
         .setActions(
-          Tell(Command("x", 1)),
-          Tell(Command("y", 2)),
+          Tell(Set("x", 1)),
+          Tell(Set("y", 2)),
           Reply(RequestVoteResult(1, success = true)),
           FishForMsg { case CommandResponse(true, _) => true },
           FishForMsg { case CommandResponse(true, _) => true }
@@ -273,7 +262,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setProbeNum(5)
         .setActions(
-          Reply(RequestVoteResult(2, success = true)),
+          Reply(RequestVoteResult(2, success = false)),
           Expect(RequestVote(3, checker.getId, 0, 0))
         )
         .run()
@@ -381,7 +370,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setProbeNum(5)
         .setActions(
-          Reply(AppendEntriesResult(2, success = true)),
+          Reply(AppendEntriesResult(2, success = false)),
           Expect(RequestVote(3, checker.getId, 0, 0))
         )
         .run()

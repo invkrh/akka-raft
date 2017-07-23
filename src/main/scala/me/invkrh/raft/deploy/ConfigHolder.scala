@@ -4,7 +4,10 @@ import java.nio.file.{Files, Paths}
 
 import com.typesafe.config.{Config, ConfigFactory}
 
-import me.invkrh.raft.exception.{RaftConfigDirectoryNotFoundException, RaftConfigFileNotFoundException}
+import me.invkrh.raft.exception.{
+  RaftConfigDirectoryNotFoundException,
+  RaftConfigFileNotFoundException
+}
 
 trait ConfigHolder {
   val config: Config

@@ -8,7 +8,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 
 import me.invkrh.raft.kit.RaftTestHarness
-import me.invkrh.raft.message.{Command, CommandResponse, Membership}
+import me.invkrh.raft.message.{CommandResponse, Membership, Set}
 
 class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
 
@@ -28,7 +28,7 @@ class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
       }
 
       implicit val timeout = Timeout(5 seconds)
-      val future = (memberDict.apply(1) ? Command("x", 1)).mapTo[CommandResponse]
+      val future = (memberDict.apply(1) ? Set("x", 1)).mapTo[CommandResponse]
       assertResult(CommandResponse(success = true)) {
         Await.result(future, 5 seconds)
       }

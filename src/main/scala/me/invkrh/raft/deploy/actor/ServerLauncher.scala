@@ -8,17 +8,17 @@ import me.invkrh.raft.message.{Register, ServerId, ServerIdRequest}
 import me.invkrh.raft.util.Logging
 
 object ServerLauncher {
-  def props(initializerRef: ActorRef, serverConf: ServerConf): Props =
-    Props(new ServerLauncher(initializerRef, serverConf))
+  def props(initiatorRef: ActorRef, serverConf: ServerConf): Props =
+    Props(new ServerLauncher(initiatorRef, serverConf))
 }
 
-class ServerLauncher(initializerRef: ActorRef, serverConf: ServerConf) extends Actor with Logging {
+class ServerLauncher(initiatorRef: ActorRef, serverConf: ServerConf) extends Actor with Logging {
 
-  initializerRef ! ServerIdRequest
+  initiatorRef ! ServerIdRequest
 
   override def receive: Receive = {
     case msg @ ServerId(id) =>
-      if (sender != initializerRef) {
+      if (sender != initiatorRef) {
         throw UnexpectedSenderException(msg.toString, sender.path.address.toString)
       } else if (id < 0) {
         logInfo(s"Initial size reached, no server will be created")
@@ -27,7 +27,7 @@ class ServerLauncher(initializerRef: ActorRef, serverConf: ServerConf) extends A
       } else {
         val server = Server.run(id, serverConf)(context.system)
         logInfo(s"Server $id has been created at ${server.path}, wait for initialization")
-        initializerRef.tell(Register(id), server)
+        initiatorRef.tell(Register(id), server)
         logInfo(s"Shutting down server launcher")
         context.stop(self)
       }

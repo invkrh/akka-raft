@@ -1,5 +1,7 @@
 package me.invkrh.raft.exception
 
+import me.invkrh.raft.message.RPCResponse
+
 final case class HeartbeatIntervalException()
     extends RuntimeException("Heartbeat interval should be smaller than the election time")
 
@@ -28,3 +30,9 @@ final case class UnreachableAddressException(address: String)
 
 final case class InvalidArgumentsException(argsStr: String)
     extends RuntimeException(s"Invalid arguments: $argsStr")
+
+final case class EmptyMembershipException()
+    extends RuntimeException(s"No members are given during initialization")
+
+final case class invalidResponseException(response: RPCResponse, curTerm: Int)
+    extends RuntimeException(s"Response $response is not valid at term $curTerm")
