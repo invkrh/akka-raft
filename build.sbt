@@ -29,3 +29,5 @@ libraryDependencies ++=
     "com.typesafe.akka" %% "akka-testkit" % "2.4.17" % "test",
     "org.scalatest" %% "scalatest" % "3.0.1" % "test"
   )
+
+scalafmtVersion := "1.1.0"
