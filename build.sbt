@@ -30,4 +30,4 @@ libraryDependencies ++=
     "org.scalatest" %% "scalatest" % "3.0.1" % "test"
   )
 
-scalafmtVersion := "1.1.0"
+scalafmtVersion := "1.0.0"
