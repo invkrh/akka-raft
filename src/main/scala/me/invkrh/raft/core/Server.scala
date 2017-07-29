@@ -94,33 +94,10 @@ class Server(
     heartBeatTimer.stop()
   }
 
-  //////////////////////////////////////////////////////////////////////////////////////////////////
-  // RPC Sender
-  //////////////////////////////////////////////////////////////////////////////////////////////////
-
-//  def distributeRPCRequest(hub: MessageHub): Unit = {
-//    val exchanges = Future.sequence {
-//      members.par.map {
-//        case (followId, ref) => hub.request(followId, ref)
-//      }.seq
-//    }
-//    exchanges pipeTo self
-//  }
+  def approveAppendEntries(request: AppendEntries): Unit = {}
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
-  // RPC Receiver
-  //////////////////////////////////////////////////////////////////////////////////////////////////
-
-  def processMessage(request: AppendEntries): Unit = {
-    // TODO
-  }
-
-  def processMessage(request: RequestVote): Unit = {
-    // TODO
-  }
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////
-  // Leader / Candidate state updater
+  // Processing batch of approved responses with Majority
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
   def processConversation(conversation: RequestVoteConversation): Unit = {
@@ -230,56 +207,59 @@ class Server(
   }
 
   def appendEntriesEndPoint: Receive = {
-    case hb: AppendEntries =>
-      if (curTerm > hb.term) {
+    case request: AppendEntries =>
+      if (curTerm > request.term) {
         sender ! AppendEntriesResult(curTerm, success = false)
-      } else if (curTerm == hb.term) {
+      } else if (curTerm == request.term) {
         curState match {
           case ServerState.Leader =>
-            throw InvalidLeaderException(id, hb.leaderId, hb.term)
+            throw MultiLeaderException(id, request.leaderId, request.term)
           case ServerState.Candidate =>
             // TODO: Add precessing
-            sender ! AppendEntriesResult(hb.term, success = true)
-            becomeFollower(hb.term, hb.leaderId)
+            sender ! AppendEntriesResult(request.term, success = true)
+            becomeFollower(request.term, request.leaderId)
           case ServerState.Follower =>
-            logDebug(s"Heartbeat from leader ${hb.leaderId} at term ${hb.term}")
+            logDebug(s"Heartbeat from leader ${request.leaderId} at term ${request.term}")
             curLeaderId foreach { leaderId =>
               checkOrThrow(
-                leaderId == hb.leaderId,
-                InvalidLeaderException(id, hb.leaderId, hb.term)
+                leaderId == request.leaderId,
+                MultiLeaderException(id, request.leaderId, request.term)
               )
             }
-            curLeaderId = Some(hb.leaderId)
+            curLeaderId = Some(request.leaderId)
             // TODO: Add precessing
-            sender ! AppendEntriesResult(hb.term, success = true)
+            sender ! AppendEntriesResult(request.term, success = true)
             electionTimer.restart()
         }
       } else {
         // TODO: Add precessing
-        sender ! AppendEntriesResult(hb.term, success = true)
-        becomeFollower(hb.term, hb.leaderId)
+        sender ! AppendEntriesResult(request.term, success = true)
+        becomeFollower(request.term, request.leaderId)
       }
   }
 
   def requestVoteEndPoint: Receive = {
-    case reqVote: RequestVote =>
-      if (curTerm > reqVote.term) {
-        sender ! RequestVoteResult(curTerm, success = false)
-      } else if (curTerm == reqVote.term) {
-        sender ! RequestVoteResult(curTerm, success = false)
+    case request: RequestVote =>
+      if (curTerm > request.term) {
+        sender ! RequestVoteResult(curTerm, voteGranted = false)
       } else {
-        curState match {
-          case ServerState.Follower =>
-            if (votedFor.isEmpty || votedFor.get == reqVote.candidateId) {
-              votedFor = Some(reqVote.candidateId)
-              sender ! RequestVoteResult(reqVote.term, success = true)
-              electionTimer.restart()
-            } else {
-              sender ! RequestVoteResult(reqVote.term, success = false)
-            }
-          case ServerState.Candidate | ServerState.Leader =>
-            sender ! RequestVoteResult(reqVote.term, success = true)
-            becomeFollower(reqVote.term) // leader is not known yet
+        if (curTerm < request.term) {
+          becomeFollower(request.term)
+        }
+        val isUpToDate: Boolean =
+          if (request.lastLogTerm > logs.last.term) {
+            true
+          } else if (request.lastLogTerm == logs.last.term) {
+            request.lastLogIndex >= logs.size - 1
+          } else {
+            false
+          }
+        if ((votedFor.isEmpty || votedFor.get == request.candidateId) && isUpToDate) {
+          votedFor = Some(request.candidateId)
+          sender ! RequestVoteResult(request.term, voteGranted = true)
+          electionTimer.restart()
+        } else {
+          sender ! RequestVoteResult(request.term, voteGranted = false)
         }
       }
   }

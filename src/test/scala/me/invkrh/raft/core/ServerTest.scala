@@ -5,7 +5,7 @@ import scala.language.postfixOps
 
 import akka.actor.{ActorSystem, PoisonPill}
 
-import me.invkrh.raft.exception.{HeartbeatIntervalException, InvalidLeaderException}
+import me.invkrh.raft.exception.{HeartbeatIntervalException, MultiLeaderException}
 import me.invkrh.raft.kit.{RaftTestHarness, _}
 import me.invkrh.raft.message._
 
@@ -60,21 +60,36 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .run()
     }
 
-    "reject RequestVote when the term of the message is equal to his own" in {
+    "accept the first RequestVote and reject the second one, " +
+      "if two different candidates have the same term, retried messages " +
+      " should also be accepted" in {
       new FollowerEndPointChecker()
-        .setActions(Tell(RequestVote(0, 0, 0, 0)), Expect(RequestVoteResult(0, success = false)))
+        .setActions(
+          Tell(RequestVote(1, 1, 0, 0)),
+          Expect(RequestVoteResult(1, voteGranted = true)),
+          Tell(RequestVote(1, 2, 0, 0)),
+          Expect(RequestVoteResult(1, voteGranted = false)),
+          Tell(RequestVote(1, 1, 0, 0)),
+          Expect(RequestVoteResult(1, voteGranted = true))
+        )
         .run()
     }
 
     "reject RequestVote when the term of the message is smaller than his own" in {
       new FollowerEndPointChecker()
-        .setActions(Tell(RequestVote(-1, 0, 0, 0)), Expect(RequestVoteResult(0, success = false)))
+        .setActions(
+          Tell(RequestVote(-1, 0, 0, 0)),
+          Expect(RequestVoteResult(0, voteGranted = false))
+        )
         .run()
     }
 
     "accept RequestVote when the term of the message is (at least) larger than his own" in {
       new FollowerEndPointChecker()
-        .setActions(Tell(RequestVote(10, 0, 0, 0)), Expect(RequestVoteResult(10, success = true)))
+        .setActions(
+          Tell(RequestVote(10, 0, 0, 0)),
+          Expect(RequestVoteResult(10, voteGranted = true))
+        )
         .run()
     }
 
@@ -82,9 +97,22 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       new FollowerEndPointChecker()
         .setActions(
           Tell(RequestVote(1, 0, 0, 0)),
-          Expect(RequestVoteResult(1, success = true)),
+          Expect(RequestVoteResult(1, voteGranted = true)),
           Reply(RequestVote(1, 1, 0, 0)),
-          Expect(RequestVoteResult(1, success = false))
+          Expect(RequestVoteResult(1, voteGranted = false))
+        )
+        .run()
+    }
+
+    // TODO: Failed
+    "accept RequestVote after leader is elected " +
+      "and a RequestVote is received with a higher term" in {
+      new FollowerEndPointChecker()
+        .setActions(
+          Tell(RequestVote(1, 0, 0, 0)),
+          Expect(RequestVoteResult(1, voteGranted = true)),
+          Tell(RequestVote(10, 1, 0, 0)),
+          Expect(RequestVoteResult(10, voteGranted = true))
         )
         .run()
     }
@@ -140,7 +168,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(Set("x", 1)), // reuse probe as client
           Tell(Set("y", 2)), // reuse probe as client
           Expect(RequestVote(1, checker.getId, 0, 0)),
-          Reply(RequestVoteResult(1, success = true)),
+          Reply(RequestVoteResult(1, voteGranted = true)),
           FishForMsg { case CommandResponse(true, _) => true },
           FishForMsg { case CommandResponse(true, _) => true }
         )
@@ -169,7 +197,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(AppendEntries(term, leaderId + 1, 0, 0, Seq[LogEntry](), 0)),
-          FishForMsg { case _: InvalidLeaderException => true }
+          FishForMsg { case _: MultiLeaderException => true }
         )
         .run()
     }
@@ -184,7 +212,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setActions(
           Tell(RequestVote(term, leaderId, 0, 0)),
-          Expect(RequestVoteResult(term, success = true)),
+          Expect(RequestVoteResult(term, voteGranted = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, term, ServerState.Follower, None)),
           Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
@@ -214,7 +242,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(Set("x", 1)),
           Tell(Set("y", 2)),
-          Reply(RequestVoteResult(1, success = true)),
+          Reply(RequestVoteResult(1, voteGranted = true)),
           FishForMsg { case CommandResponse(true, _) => true },
           FishForMsg { case CommandResponse(true, _) => true }
         )
@@ -225,8 +253,19 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val checker = new CandidateEndPointChecker()
       checker
         .setActions(
-          Reply(RequestVoteResult(1, success = false)),
+          Reply(RequestVoteResult(1, voteGranted = false)),
           Expect(RequestVote(2, checker.getId, 0, 0))
+        )
+        .run()
+    }
+
+    "accept VoteRequest with a higher termA after stepping down to follower" in {
+      val checker = new CandidateEndPointChecker()
+      checker
+        .setActions(
+          Reply(RequestVoteResult(2, voteGranted = false)), // step down
+          Tell(RequestVote(10, 100, 0, 0)),
+          Expect(RequestVoteResult(10, voteGranted = true))
         )
         .run()
     }
@@ -236,7 +275,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setProbeNum(5)
         .setActions(
-          MajorReply(RequestVoteResult(1, success = true)),
+          MajorReply(RequestVoteResult(1, voteGranted = true)),
           Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0))
         )
         .run()
@@ -248,8 +287,8 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setProbeNum(5)
         .setActions(
           MinorReply(
-            RequestVoteResult(1, success = true),
-            Some(RequestVoteResult(1, success = false))
+            RequestVoteResult(1, voteGranted = true),
+            Some(RequestVoteResult(1, voteGranted = false))
           ),
           Expect(RequestVote(2, checker.getId, 0, 0))
         )
@@ -262,7 +301,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setProbeNum(5)
         .setActions(
-          Reply(RequestVoteResult(2, success = false)),
+          Reply(RequestVoteResult(2, voteGranted = false)),
           Expect(RequestVote(3, checker.getId, 0, 0))
         )
         .run()
@@ -273,7 +312,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       new CandidateEndPointChecker()
         .setActions(
           Tell(RequestVote(2, 0, 0, 0)),
-          Expect(RequestVoteResult(2, success = true)),
+          Expect(RequestVoteResult(2, voteGranted = true)),
           Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true))
         )
@@ -357,7 +396,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       new LeaderEndPointChecker()
         .setActions(
           Tell(RequestVote(term, 0, 0, 0)),
-          Expect(RequestVoteResult(term, success = true)),
+          Expect(RequestVoteResult(term, voteGranted = true)),
           Tell(AppendEntries(term, 0, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true))
         )
@@ -427,7 +466,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Reply(AppendEntriesResult(1, success = true)),
           Tell(AppendEntries(1, 2, 0, 0, Seq[LogEntry](), 0)),
-          FishForMsg { case _: InvalidLeaderException => true }
+          FishForMsg { case _: MultiLeaderException => true }
         )
         .run()
     }

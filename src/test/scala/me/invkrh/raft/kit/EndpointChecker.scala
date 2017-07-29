@@ -95,7 +95,7 @@ class CandidateEndPointChecker(implicit val system: ActorSystem) extends Endpoin
 class LeaderEndPointChecker(implicit val system: ActorSystem) extends EndpointChecker {
   override protected def preActions(): Unit = {
     actions = Expect(RequestVote(1, id, 0, 0)) ::
-      Reply(RequestVoteResult(1, success = true)) ::
+      Reply(RequestVoteResult(1, voteGranted = true)) ::
       Expect(AppendEntries(1, id, 0, 0, Seq[LogEntry](), 0)) :: actions
   }
 }

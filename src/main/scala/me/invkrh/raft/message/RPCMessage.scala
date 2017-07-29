@@ -15,7 +15,7 @@ case class RequestVote(term: Int, candidateId: Int, lastLogIndex: Int, lastLogTe
     extends RPCRequest
 
 sealed trait RPCResponse extends RaftMessage
-case class RequestVoteResult(term: Int, success: Boolean) extends RPCResponse
+case class RequestVoteResult(term: Int, voteGranted: Boolean) extends RPCResponse
 case class AppendEntriesResult(term: Int, success: Boolean) extends RPCResponse
 case class RequestTimeout(term: Int) extends RPCResponse
 

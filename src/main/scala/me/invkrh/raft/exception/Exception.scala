@@ -5,7 +5,7 @@ import me.invkrh.raft.message.RPCResponse
 final case class HeartbeatIntervalException()
     extends RuntimeException("Heartbeat interval should be smaller than the election time")
 
-final case class InvalidLeaderException(local: Int, received: Int, term: Int)
+final case class MultiLeaderException(local: Int, received: Int, term: Int)
     extends RuntimeException(
       s"Two leader detected at term $term: local -> $local, received -> $received"
     )
