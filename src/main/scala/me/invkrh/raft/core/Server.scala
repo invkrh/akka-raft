@@ -1,6 +1,5 @@
 package me.invkrh.raft.core
 
-import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -79,10 +78,10 @@ class Server(
   private var curState: ServerState.Value = ServerState.Bootstrap
   private var curLeaderId: Option[Int] = None
 
-  val clientMessageCache = new MessageCache[Command]()
-  val electionTimer =
+  val clientMessageCache = new MessageCache[Command](id)
+  val electionTimer: RandomizedTimer =
     new RandomizedTimer(minElectionTime, maxElectionTime, StartElection).setTarget(self)
-  val heartBeatTimer = new PeriodicTimer(tickTime, Tick).setTarget(self)
+  val heartBeatTimer: PeriodicTimer = new PeriodicTimer(tickTime, Tick).setTarget(self)
 
   override def loggingPrefix: String = s"[$id-$curState]"
 
@@ -114,14 +113,18 @@ class Server(
             maxTerm = Math.max(term, maxTerm)
           case RequestVoteResult(term, false) if term == curTerm =>
             logInfo(
-              s"[Follwer ID = $follId] already voted or Candidate's log is outdated " +
+              s"[Follwer ID = $follId] rejected RequestVote request at term ${request.term} " +
                 s"(source address: ${follRef.path})"
             )
-          case RequestVoteResult(term, true) if term == curTerm => validateCnt += 1
+          case RequestVoteResult(term, true) if term == curTerm =>
+            logInfo(
+              s"[Follwer ID = $follId] voted for server $id " + s"(source address: ${follRef.path})"
+            )
+            validateCnt += 1
           case RequestTimeout(term) =>
             logInfo(
-              s"[Follwer ID = $follId] Request time out " +
-                s"(source address: ${follRef.path})"
+              s"[Follwer ID = $follId] Request RequestVote time out at $term" +
+                s" (source address: ${follRef.path})"
             )
           case _ => throw invalidResponseException(response, curTerm)
         }
@@ -145,14 +148,14 @@ class Server(
 
   def processConversation(conversation: AppendEntriesConversation): Unit = {
     var maxTerm = -1
-    var validateCnt = 0
+    var validateCnt = 1 // validated by itself
     conversation.content foreach {
       case Exchange(request: AppendEntries, response, follId, follRef) =>
         response match {
           case AppendEntriesResult(term, false) if term > curTerm =>
             logInfo(
               s"[Follwer ID = $follId] New leader is detected by receiving $response " +
-                s"(source address: ${follRef.path})"
+                s" (source address: ${follRef.path})"
             )
             maxTerm = Math.max(term, maxTerm)
           case AppendEntriesResult(term, false) if term == curTerm =>
@@ -162,8 +165,8 @@ class Server(
             matchIndex.updated(follId, request.prevLogIndex + request.entries.size)
           case RequestTimeout(term) =>
             logInfo(
-              s"[Follwer ID = $follId] Request time out at $term" +
-                s"(source address: ${follRef.path})"
+              s"[Follwer ID = $follId] Request AppendEntries time out at $term" +
+                s" (source address: ${follRef.path})"
             )
           case _ => throw invalidResponseException(response, curTerm)
         }
@@ -227,6 +230,8 @@ class Server(
               )
             }
             curLeaderId = Some(request.leaderId)
+            // TODO: refactor this function, at least:
+            clientMessageCache.flushTo(members(request.leaderId))
             // TODO: Add precessing
             sender ! AppendEntriesResult(request.term, success = true)
             electionTimer.restart()
@@ -254,6 +259,7 @@ class Server(
           } else {
             false
           }
+//        logInfo("test = " + (votedFor.isEmpty, votedFor.contains(request.candidateId), isUpToDate))
         if ((votedFor.isEmpty || votedFor.get == request.candidateId) && isUpToDate) {
           votedFor = Some(request.candidateId)
           sender ! RequestVoteResult(request.term, voteGranted = true)

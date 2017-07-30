@@ -3,7 +3,7 @@ package me.invkrh.raft.core
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
-import akka.actor.{ActorSystem, PoisonPill}
+import akka.actor.PoisonPill
 
 import me.invkrh.raft.exception.{HeartbeatIntervalException, MultiLeaderException}
 import me.invkrh.raft.kit.{RaftTestHarness, _}
@@ -36,7 +36,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "accept AppendEntries when the term of the message is equal to his own" in {
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(0, 1, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(0, success = true))
         )
         .run()
@@ -104,7 +104,6 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .run()
     }
 
-    // TODO: Failed
     "accept RequestVote after leader is elected " +
       "and a RequestVote is received with a higher term" in {
       new FollowerEndPointChecker()
@@ -138,7 +137,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             tickTime * heartbeatNum + electionTime * 2,
             Rep(
               heartbeatNum,
-              Delay(tickTime, Tell(AppendEntries(0, checker.getId + 1, 0, 0, Seq[LogEntry](), 0))),
+              Delay(tickTime, Tell(AppendEntries(0, 1, 0, 0, Seq[LogEntry](), 0))),
               Expect(AppendEntriesResult(0, success = true))
             ),
             Expect(RequestVote(1, checker.getId, 0, 0))
@@ -205,20 +204,20 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
   "Candidate" should {
 
-    "memorize leaderID after becoming following and receiving heartbeat" in {
-      val leaderId = 20
-      val term = 10
+    "memorize leaderID after becoming follower and receiving heartbeat" in {
+      val leaderId = 1
+      val higherTerm = 10
       val checker = new CandidateEndPointChecker()
       checker
         .setActions(
-          Tell(RequestVote(term, leaderId, 0, 0)),
-          Expect(RequestVoteResult(term, voteGranted = true)),
+          Tell(RequestVote(higherTerm, leaderId, 0, 0)),
+          Expect(RequestVoteResult(higherTerm, voteGranted = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, term, ServerState.Follower, None)),
-          Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
-          Expect(AppendEntriesResult(term, success = true)),
+          Expect(Status(checker.getId, higherTerm, ServerState.Follower, None)),
+          Tell(AppendEntries(higherTerm, leaderId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntriesResult(higherTerm, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
+          Expect(Status(checker.getId, higherTerm, ServerState.Follower, Some(leaderId)))
         )
         .run()
     }
@@ -307,13 +306,12 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .run()
     }
 
-    "become follower if it receives a RequestVote with term larger than " +
-      "its current term" in {
+    "become follower if it receives a RequestVote with term larger than its current term" in {
       new CandidateEndPointChecker()
         .setActions(
-          Tell(RequestVote(2, 0, 0, 0)),
+          Tell(RequestVote(2, 1, 0, 0)),
           Expect(RequestVoteResult(2, voteGranted = true)),
-          Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -323,9 +321,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       "its current term" in {
       new CandidateEndPointChecker()
         .setActions(
-          Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true)),
-          Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -395,9 +393,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val term = 10
       new LeaderEndPointChecker()
         .setActions(
-          Tell(RequestVote(term, 0, 0, 0)),
+          Tell(RequestVote(term, 1, 0, 0)),
           Expect(RequestVoteResult(term, voteGranted = true)),
-          Tell(AppendEntries(term, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(term, 1, 0, 0, Seq[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true))
         )
         .run()

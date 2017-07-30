@@ -6,16 +6,18 @@ import akka.actor.ActorRef
 
 import me.invkrh.raft.util.Logging
 
-class MessageCache[T <: RaftMessage]() extends Logging {
+class MessageCache[T <: RaftMessage](id: Int) extends Logging {
   private val cache: ArrayBuffer[(ActorRef, T)] = new ArrayBuffer()
   def add(sender: ActorRef, msg: T): Unit = {
     cache.append((sender, msg))
-    logInfo(s"Message cached: $msg")
+    logDebug(s"[svr-$id] Message cached: $msg")
   }
   def flushTo(target: ActorRef): Unit = {
+    val cnt = cache.size
     if (cache.nonEmpty) {
       cache foreach { case (src, msg) => target.tell(msg, src) }
       cache.clear()
     }
+    logDebug(s"[svr-$id] Message flushed: $cnt")
   }
 }

@@ -20,7 +20,7 @@ class IntegrationTest extends TestHarness { self =>
     "be launched correctly" in {
 
       /**
-       * Start precursor
+       * Start initiator
        */
       val initiator = new Initiator()
       initiator.main(Array())

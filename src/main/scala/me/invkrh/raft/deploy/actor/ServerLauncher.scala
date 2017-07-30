@@ -28,7 +28,7 @@ class ServerLauncher(initiatorRef: ActorRef, serverConf: ServerConf) extends Act
         val server = Server.run(id, serverConf)(context.system)
         logInfo(s"Server $id has been created at ${server.path}, wait for initialization")
         initiatorRef.tell(Register(id), server)
-        logInfo(s"Shutting down server launcher")
+        logInfo(s"Shutting down server launcher of server $id")
         context.stop(self)
       }
   }
