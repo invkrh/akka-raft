@@ -1,5 +1,6 @@
 package me.invkrh.raft.core
 
+import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -8,7 +9,7 @@ import akka.pattern.pipe
 
 import me.invkrh.raft.deploy.raftServerName
 import me.invkrh.raft.exception._
-import me.invkrh.raft.message._
+import me.invkrh.raft.message.{Conversation, _}
 import me.invkrh.raft.util._
 
 object Server {
@@ -93,99 +94,70 @@ class Server(
     heartBeatTimer.stop()
   }
 
-  def approveAppendEntries(request: AppendEntries): Unit = {}
+  def applyCommandToStateMachine(): Unit = {}
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
   // Processing batch of approved responses with Majority
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
-  def processConversation(conversation: RequestVoteConversation): Unit = {
+  // TODO: Merger two method, may create new class for readability
+  def processConversation(cvs: Conversation): Unit = {
     var maxTerm = -1
-    var validateCnt = 1 // validated by itself
-    conversation.content foreach {
-      case Exchange(request: RequestVote, response, follId, follRef) =>
+    val validateExchange = new ArrayBuffer[Exchange]()
+    cvs.content foreach {
+      case ex @ Exchange(request, response, fid) =>
+        val ref = members(fid)
         response match {
-          case RequestVoteResult(term, false) if term > curTerm =>
-            logInfo(
-              s"[Follwer ID = $follId] New leader is detected by receiving $response " +
-                s"(source address: ${follRef.path})"
-            )
-            maxTerm = Math.max(term, maxTerm)
-          case RequestVoteResult(term, false) if term == curTerm =>
-            logInfo(
-              s"[Follwer ID = $follId] rejected RequestVote request at term ${request.term} " +
-                s"(source address: ${follRef.path})"
-            )
-          case RequestVoteResult(term, true) if term == curTerm =>
-            logInfo(
-              s"[Follwer ID = $follId] voted for server $id " + s"(source address: ${follRef.path})"
-            )
-            validateCnt += 1
-          case RequestTimeout(term) =>
-            logInfo(
-              s"[Follwer ID = $follId] Request RequestVote time out at $term" +
-                s" (source address: ${follRef.path})"
-            )
-          case _ => throw invalidResponseException(response, curTerm)
-        }
-    }
 
-    if (maxTerm > curTerm) {
-      becomeFollower(maxTerm)
-    } else {
-      if (validateCnt > members.size / 2) {
-        logInfo(
-          s"Election for term $curTerm is ended since majority is reached " +
-            s"($validateCnt / ${members.size})"
-        )
-        becomeLeader()
-      } else {
-        logInfo(s"Majority is not reached ($validateCnt / ${members.size})")
-      }
-    }
-    logDebug(s"=== end of processing conversation ===")
-  }
-
-  def processConversation(conversation: AppendEntriesConversation): Unit = {
-    var maxTerm = -1
-    var validateCnt = 1 // validated by itself
-    conversation.content foreach {
-      case Exchange(request: AppendEntries, response, follId, follRef) =>
-        response match {
-          case AppendEntriesResult(term, false) if term > curTerm =>
-            logInfo(
-              s"[Follwer ID = $follId] New leader is detected by receiving $response " +
-                s" (source address: ${follRef.path})"
-            )
-            maxTerm = Math.max(term, maxTerm)
+          // reply to leader
           case AppendEntriesResult(term, false) if term == curTerm =>
-            nextIndex.updated(follId, nextIndex(follId) - 1)
+            logInfo(s"Append is failed on server $fid at term $term (address: $ref)")
+            nextIndex = nextIndex.updated(fid, Math.max(1, nextIndex(fid) - 1)) // at least 1
           case AppendEntriesResult(term, true) if term == curTerm =>
-            validateCnt += 1
-            matchIndex.updated(follId, request.prevLogIndex + request.entries.size)
-          case RequestTimeout(term) =>
-            logInfo(
-              s"[Follwer ID = $follId] Request AppendEntries time out at $term" +
-                s" (source address: ${follRef.path})"
-            )
-          case _ => throw invalidResponseException(response, curTerm)
+            logInfo(s"Append is succeeded on server $fid at term $term (address: $ref)")
+            val req = request.asInstanceOf[AppendEntries]
+            matchIndex = matchIndex.updated(fid, req.prevLogIndex + req.entries.size)
+            validateExchange.append(ex)
+
+          // Reply to candidate
+          case RequestVoteResult(term, false) if term == curTerm =>
+            logInfo(s"Vote rejected by server $fid at term $term (address: $ref)")
+          case RequestVoteResult(term, true) if term == curTerm =>
+            logInfo(s"Vote granted by server $fid at term $term (address: $ref)")
+            validateExchange.append(ex)
+
+          // Common Response
+          case _: RequestTimeout =>
+            logInfo(s"Request $request is time out when connecting server $fid (address: $ref)")
+          case _ =>
+            if (response.term > curTerm && !response.success) {
+              logInfo(s"Higher term is detected by $response from server $fid (address: $ref)")
+              maxTerm = Math.max(response.term, maxTerm)
+            } else {
+              throw invalidResponseException(response, curTerm)
+            }
         }
     }
-
     if (maxTerm > curTerm) {
+      logInfo("Step down because of a higher term in responses")
       becomeFollower(maxTerm)
     } else {
+      val validateCnt = validateExchange.size + 1
+      val hint = s"$validateCnt / ${members.size}"
       if (validateCnt > members.size / 2) {
-        logDebug(
-          s"Heartbeat for term $curTerm is ended since majority is reached " +
-            s"($validateCnt / ${members.size}), committing logs"
-        )
-        // TODO: apply to state machine
+        logInfo(s"Majority is reached ($hint) at term $curTerm")
+        cvs match {
+          case _: AppendEntriesConversation =>
+            logInfo("Updating leader's state")
+          // TODO
+          case _: RequestVoteConversation =>
+            becomeLeader()
+        }
       } else {
-        logInfo(s"Majority is not reached ($validateCnt / ${members.size})")
+        logInfo(s"Majority is not reached ($hint})")
       }
     }
-    logDebug(s"=== end of processing conversation ===")
+    logDebug(s"=== end of conversation processing  ===")
   }
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -246,7 +218,7 @@ class Server(
   def requestVoteEndPoint: Receive = {
     case request: RequestVote =>
       if (curTerm > request.term) {
-        sender ! RequestVoteResult(curTerm, voteGranted = false)
+        sender ! RequestVoteResult(curTerm, success = false)
       } else {
         if (curTerm < request.term) {
           becomeFollower(request.term)
@@ -262,10 +234,10 @@ class Server(
 //        logInfo("test = " + (votedFor.isEmpty, votedFor.contains(request.candidateId), isUpToDate))
         if ((votedFor.isEmpty || votedFor.get == request.candidateId) && isUpToDate) {
           votedFor = Some(request.candidateId)
-          sender ! RequestVoteResult(request.term, voteGranted = true)
+          sender ! RequestVoteResult(request.term, success = true)
           electionTimer.restart()
         } else {
-          sender ! RequestVoteResult(request.term, voteGranted = false)
+          sender ! RequestVoteResult(request.term, success = false)
         }
       }
   }
@@ -295,8 +267,7 @@ class Server(
   }
 
   def conversationEndPoint: Receive = {
-    case c: AppendEntriesConversation => processConversation(c)
-    case c: RequestVoteConversation => processConversation(c)
+    case c: Conversation => processConversation(c)
   }
 
   def irrelevantMsgEndPoint: Receive = {
