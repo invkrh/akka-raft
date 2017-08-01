@@ -14,7 +14,7 @@ import me.invkrh.raft.util.Logging
 sealed trait MessageHub extends Logging {
   def term: Int
   def selfId: Int
-  def logs: Vector[LogEntry]
+  def logs: List[LogEntry]
   def request(followerId: Int): RPCRequest
   def members: Map[Int, ActorRef]
 
@@ -48,7 +48,7 @@ sealed trait MessageHub extends Logging {
   }
 }
 
-case class CandidateMessageHub(term: Int, selfId: Int, logs: Vector[LogEntry])(
+case class CandidateMessageHub(term: Int, selfId: Int, logs: List[LogEntry])(
   implicit val members: Map[Int, ActorRef],
   val ec: ExecutionContext
 ) extends MessageHub {
@@ -67,7 +67,7 @@ case class LeaderMessageHub(
   selfId: Int,
   commitIndex: Int,
   nextIndex: Map[Int, Int],
-  logs: Vector[LogEntry]
+  logs: List[LogEntry]
 )(implicit val members: Map[Int, ActorRef], val ec: ExecutionContext)
     extends MessageHub {
   def request(followerId: Int): RPCRequest = {
@@ -80,7 +80,7 @@ case class LeaderMessageHub(
       prevLogTerm = logs(followNextIndex - 1).term,
       entries =
         if (lastLogIndex >= followNextIndex) logs.drop(followNextIndex)
-        else new ArrayBuffer[LogEntry](),
+        else List[LogEntry](),
       leaderCommit = commitIndex
     )
   }

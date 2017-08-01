@@ -96,6 +96,6 @@ class LeaderEndPointChecker(implicit val system: ActorSystem) extends EndpointCh
   override protected def preActions(): Unit = {
     actions = Expect(RequestVote(1, id, 0, 0)) ::
       Reply(RequestVoteResult(1, success = true)) ::
-      Expect(AppendEntries(1, id, 0, 0, Seq[LogEntry](), 0)) :: actions
+      Expect(AppendEntries(1, id, 0, 0, List[LogEntry](), 0)) :: actions
   }
 }

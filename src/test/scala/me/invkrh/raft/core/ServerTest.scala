@@ -5,17 +5,71 @@ import scala.language.postfixOps
 
 import akka.actor.PoisonPill
 
-import me.invkrh.raft.exception.{HeartbeatIntervalException, MultiLeaderException}
+import me.invkrh.raft.exception.{
+  HeartbeatIntervalException,
+  LogMatchingPropertyException,
+  MultiLeaderException
+}
 import me.invkrh.raft.kit.{RaftTestHarness, _}
 import me.invkrh.raft.message._
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
-  /////////////////////////////////////////////////
+  "Log synchronization" should {
+    def req(prevIndex: Int, entries: LogEntry*): AppendEntries =
+      AppendEntries(0, 0, prevIndex, 0, entries.toList, 0)
+
+    val logs = List(
+      LogEntry(0, Init),
+      LogEntry(0, Set("x", 1)),
+      LogEntry(0, Set("x", 2)),
+      LogEntry(0, Set("x", 3)),
+      LogEntry(0, Set("x", 4)),
+      LogEntry(0, Set("x", 5))
+    )
+
+    "merger request logs and local logs" in {
+      val request = req(3, LogEntry(0, Set("x", 4)), LogEntry(0, Set("x", 5)))
+      assertResult(logs) {
+        Server.syncLogsByRequest(request, logs)
+      }
+    }
+
+    "throw exception if log matching property is broken" in {
+      val request = req(3, LogEntry(0, Set("x", 1)), LogEntry(0, Set("x", 2)))
+      intercept[LogMatchingPropertyException] {
+        Server.syncLogsByRequest(request, logs)
+      }
+    }
+
+    "drop tailing entries from local logs if their indices are larger than request logs size" in {
+      val request = req(2, LogEntry(0, Set("x", 3)))
+      assertResult(logs.take(4)) {
+        Server.syncLogsByRequest(request, logs)
+      }
+    }
+
+    "add new entries if prevIndex points to the last log" in {
+      val request = req(5, LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))
+      assertResult(logs ::: List(LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))) {
+        Server.syncLogsByRequest(request, logs)
+      }
+    }
+
+    "replace logs after inconsistent entry" in {
+      val request = req(3, LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))
+      assertResult(logs.take(4) ::: List(LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))) {
+        Server.syncLogsByRequest(request, logs)
+      }
+    }
+  }
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////
   //  Leader Election
-  /////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////
 
   "Server" should {
+
     "throw exception when election time is shorter than heartbeat interval" in {
       intercept[HeartbeatIntervalException] {
         val server =
@@ -33,10 +87,11 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
   }
 
   "Follower" should {
+
     "accept AppendEntries when the term of the message is equal to his own" in {
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(0, 1, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(0, 1, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(0, success = true))
         )
         .run()
@@ -45,7 +100,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "reject AppendEntries when the term of the message is smaller than his own" in {
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(-1, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(-1, 0, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(0, success = false))
         )
         .run()
@@ -54,7 +109,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "reply AppendEntries with larger term which is received with the message" in {
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(2, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 0, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -131,7 +186,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             tickTime * heartbeatNum + electionTime * 2,
             Rep(
               heartbeatNum,
-              Delay(tickTime, Tell(AppendEntries(0, 1, 0, 0, Seq[LogEntry](), 0))),
+              Delay(tickTime, Tell(AppendEntries(0, 1, 0, 0, List[LogEntry](), 0))),
               Expect(AppendEntriesResult(0, success = true))
             ),
             Expect(RequestVote(1, checker.getId, 0, 0))
@@ -143,7 +198,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "resend command to leader if leader is elected" in {
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)), // 1 is the id of leader
+          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)), // 1 is the id of leader
           Expect(AppendEntriesResult(2, success = true)), // leader is set
           Tell(Set("x", 1)), // reuse leader ref as client ref
           Tell(Set("y", 2)),
@@ -174,7 +229,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val leaderId = 1
       checker
         .setActions(
-          Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(term, leaderId, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
@@ -187,9 +242,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val leaderId = 1
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(term, leaderId, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true)),
-          Tell(AppendEntries(term, leaderId + 1, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(term, leaderId + 1, 0, 0, List[LogEntry](), 0)),
           FishForMsg { case _: MultiLeaderException => true }
         )
         .run()
@@ -208,7 +263,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Expect(RequestVoteResult(higherTerm, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, higherTerm, ServerState.Follower, None)),
-          Tell(AppendEntries(higherTerm, leaderId, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(higherTerm, leaderId, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(higherTerm, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, higherTerm, ServerState.Follower, Some(leaderId)))
@@ -269,7 +324,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setProbeNum(5)
         .setActions(
           MajorReply(RequestVoteResult(1, success = true)),
-          Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0))
+          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0))
         )
         .run()
     }
@@ -305,7 +360,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(RequestVote(2, 1, 0, 0)),
           Expect(RequestVoteResult(2, success = true)),
-          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -315,9 +370,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       "its current term" in {
       new CandidateEndPointChecker()
         .setActions(
-          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true)),
-          Tell(AppendEntries(2, 1, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -327,7 +382,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val checker = new CandidateEndPointChecker()
       checker
         .setActions(
-          Tell(AppendEntries(1, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(1, 0, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(1, success = true)),
           Expect(RequestVote(2, checker.getId, 0, 0))
         )
@@ -338,7 +393,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       new CandidateEndPointChecker()
         .setProbeNum(5)
         .setActions(
-          Tell(AppendEntries(0, 0, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(0, 0, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(1, success = false))
         )
         .run()
@@ -350,7 +405,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val leaderId = 1
       checker
         .setActions(
-          Tell(AppendEntries(term, leaderId, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(term, leaderId, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
@@ -360,6 +415,17 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
   }
 
   "leader" should {
+
+    "never receive an AppendEntries RPC with the same term" in {
+      new LeaderEndPointChecker()
+        .setActions(
+          Reply(AppendEntriesResult(1, success = true)),
+          Tell(AppendEntries(1, 2, 0, 0, List[LogEntry](), 0)),
+          FishForMsg { case _: MultiLeaderException => true }
+        )
+        .run()
+    }
+
     "send heartbeat to every follower every heartbeat interval" in {
       val tickTime = 200.millis
       val checker = new LeaderEndPointChecker()
@@ -373,9 +439,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
               tickTime,
               tickTime * 2,
               Reply(AppendEntriesResult(1, success = true)),
-              Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
+              Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
               Reply(AppendEntriesResult(1, success = true)),
-              Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0))
+              Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0))
             )
           )
         )
@@ -389,7 +455,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(RequestVote(term, 1, 0, 0)),
           Expect(RequestVoteResult(term, success = true)),
-          Tell(AppendEntries(term, 1, 0, 0, Seq[LogEntry](), 0)),
+          Tell(AppendEntries(term, 1, 0, 0, List[LogEntry](), 0)),
           Expect(AppendEntriesResult(term, success = true))
         )
         .run()
@@ -416,12 +482,12 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             AppendEntriesResult(1, success = false),
             Some(AppendEntriesResult(1, success = true))
           ),
-          Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
           MajorReply(
             AppendEntriesResult(1, success = false),
             Some(AppendEntriesResult(1, success = true))
           ),
-          Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
           Reply(AppendEntriesResult(1, success = true))
         )
         .run()
@@ -432,11 +498,11 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setProbeNum(5)
         .setActions(
-          Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
           MinorReply(AppendEntriesResult(1, success = false)),
-          Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
           MajorReply(AppendEntriesResult(1, success = true)),
-          Expect(AppendEntries(1, checker.getId, 0, 0, Seq[LogEntry](), 0)),
+          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
           Reply(AppendEntriesResult(1, success = true))
         )
         .run()
@@ -451,16 +517,5 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         )
         .run()
     }
-
-    "never receive an AppendEntries RPC with the same term" in {
-      new LeaderEndPointChecker()
-        .setActions(
-          Reply(AppendEntriesResult(1, success = true)),
-          Tell(AppendEntries(1, 2, 0, 0, Seq[LogEntry](), 0)),
-          FishForMsg { case _: MultiLeaderException => true }
-        )
-        .run()
-    }
   }
-
 }

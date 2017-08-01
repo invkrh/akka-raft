@@ -10,13 +10,7 @@ import akka.actor.{ActorRef, Cancellable, Scheduler}
 import me.invkrh.raft.message.TimerMessage
 
 trait Timer {
-  protected var target: ActorRef = _
   protected var cancellable: Cancellable = _
-
-  def setTarget(target: ActorRef): this.type = {
-    this.target = target
-    this
-  }
 
   def start(): Unit
   def stop(): Unit = {
@@ -31,7 +25,8 @@ trait Timer {
 }
 
 class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: TimerMessage)(
-  implicit scheduler: Scheduler
+  implicit scheduler: Scheduler,
+  target: ActorRef
 ) extends Timer {
   def start(): Unit = {
     require(target != null, "Timer target can not be null")
@@ -40,7 +35,10 @@ class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: TimerMess
   }
 }
 
-class PeriodicTimer(duration: FiniteDuration, event: TimerMessage)(implicit scheduler: Scheduler)
+class PeriodicTimer(
+  duration: FiniteDuration,
+  event: TimerMessage
+)(implicit scheduler: Scheduler, target: ActorRef)
     extends Timer {
   def start(): Unit = {
     require(target != null, "Timer target can not be null")

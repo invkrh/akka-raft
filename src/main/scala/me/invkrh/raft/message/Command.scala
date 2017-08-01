@@ -10,7 +10,7 @@ case class Remove(key: String) extends Command {
 case class Get(key: String) extends Command {
   override def toString: String = s"get $key"
 }
-case object Void extends Command {
+case object Init extends Command {
   override def toString: String = s"Void"
 }
 case class CommandResponse(success: Boolean, info: String = "")

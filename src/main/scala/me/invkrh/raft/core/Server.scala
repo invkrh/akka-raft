@@ -14,17 +14,15 @@ import me.invkrh.raft.util._
 
 object Server {
 
-  def checkOrThrow(assert: Boolean, cause: Throwable): Unit = {
-    if (!assert) throw cause
-  }
-
   def props(
     id: Int,
     minElectionTime: FiniteDuration,
     maxElectionTime: FiniteDuration,
     tickTime: FiniteDuration
   ): Props = {
-    checkOrThrow(minElectionTime > tickTime, HeartbeatIntervalException())
+    if (minElectionTime <= tickTime) {
+      throw HeartbeatIntervalException()
+    }
     Props(new Server(id, minElectionTime, maxElectionTime, tickTime))
   }
 
@@ -45,6 +43,26 @@ object Server {
   def run(id: Int, serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
     system.actorOf(props(id, serverConf), s"$raftServerName-$id")
   }
+
+  def syncLogsByRequest(request: AppendEntries, logs: List[LogEntry]): List[LogEntry] = {
+    def logMerge(requestLogs: List[LogEntry], localLogs: List[LogEntry]): List[LogEntry] = {
+      (requestLogs, localLogs) match {
+        case (x +: xs, y +: ys) =>
+          if (x.term == y.term) {
+            if (x.command != y.command) {
+              throw LogMatchingPropertyException(x.command, y.command)
+            }
+            x +: logMerge(xs, ys)
+          } else {
+            requestLogs
+          }
+        case (Nil, _) => Nil
+        case (_, Nil) => requestLogs
+      }
+    }
+    val (before, after) = logs.splitAt(request.prevLogIndex + 1)
+    before ++ logMerge(request.entries, after)
+  }
 }
 
 class Server(
@@ -57,14 +75,12 @@ class Server(
 
   import context._
 
-  import Server.checkOrThrow
-
   implicit val scheduler: Scheduler = system.scheduler
 
   // Persistent state on all servers
   private var curTerm = 0
   private var votedFor: Option[Int] = None
-  private var logs: Vector[LogEntry] = Vector(LogEntry(0, Void))
+  private var logs: List[LogEntry] = List(LogEntry(0, Init))
 
   // Volatile state on all servers
   @volatile private var commitIndex = 0
@@ -79,10 +95,9 @@ class Server(
   private var curState: ServerState.Value = ServerState.Bootstrap
   private var curLeaderId: Option[Int] = None
 
-  val clientMessageCache = new MessageCache[Command](id)
-  val electionTimer: RandomizedTimer =
-    new RandomizedTimer(minElectionTime, maxElectionTime, StartElection).setTarget(self)
-  val heartBeatTimer: PeriodicTimer = new PeriodicTimer(tickTime, Tick).setTarget(self)
+  private val clientMessageCache = new MessageCache[Command](id)
+  private val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
+  private val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
 
   override def loggingPrefix: String = s"[$id-$curState]"
 
@@ -100,7 +115,6 @@ class Server(
   // Processing batch of approved responses with Majority
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
-  // TODO: Merger two method, may create new class for readability
   def processConversation(cvs: Conversation): Unit = {
     var maxTerm = -1
     val validateExchange = new ArrayBuffer[Exchange]()
@@ -134,12 +148,11 @@ class Server(
               logInfo(s"Higher term is detected by $response from server $fid (address: $ref)")
               maxTerm = Math.max(response.term, maxTerm)
             } else {
-              throw invalidResponseException(response, curTerm)
+              throw InvalidResponseException(response, curTerm)
             }
         }
     }
     if (maxTerm > curTerm) {
-      logInfo("Step down because of a higher term in responses")
       becomeFollower(maxTerm)
     } else {
       val validateCnt = validateExchange.size + 1
@@ -149,7 +162,7 @@ class Server(
         cvs match {
           case _: AppendEntriesConversation =>
             logInfo("Updating leader's state")
-          // TODO
+          // TODO: apply validated log
           case _: RequestVoteConversation =>
             becomeLeader()
         }
@@ -183,35 +196,24 @@ class Server(
 
   def appendEntriesEndPoint: Receive = {
     case request: AppendEntries =>
-      if (curTerm > request.term) {
+      if (request.term < curTerm) {
         sender ! AppendEntriesResult(curTerm, success = false)
-      } else if (curTerm == request.term) {
-        curState match {
-          case ServerState.Leader =>
-            throw MultiLeaderException(id, request.leaderId, request.term)
-          case ServerState.Candidate =>
-            // TODO: Add precessing
-            sender ! AppendEntriesResult(request.term, success = true)
-            becomeFollower(request.term, request.leaderId)
-          case ServerState.Follower =>
-            logDebug(s"Heartbeat from leader ${request.leaderId} at term ${request.term}")
-            curLeaderId foreach { leaderId =>
-              checkOrThrow(
-                leaderId == request.leaderId,
-                MultiLeaderException(id, request.leaderId, request.term)
-              )
-            }
-            curLeaderId = Some(request.leaderId)
-            // TODO: refactor this function, at least:
-            clientMessageCache.flushTo(members(request.leaderId))
-            // TODO: Add precessing
-            sender ! AppendEntriesResult(request.term, success = true)
-            electionTimer.restart()
-        }
       } else {
-        // TODO: Add precessing
-        sender ! AppendEntriesResult(request.term, success = true)
-        becomeFollower(request.term, request.leaderId)
+        if (request.term == curTerm && curLeaderId.exists(_ != request.leaderId)) {
+          throw MultiLeaderException(id, request.leaderId, request.term)
+        }
+        becomeFollower(request.term, Some(request.leaderId))
+        if (logs.size - 1 >= request.prevLogIndex &&
+          logs(request.prevLogIndex).term == request.prevLogTerm) {
+
+          logs = Server.syncLogsByRequest(request, logs)
+          if (request.leaderCommit > commitIndex) {
+            commitIndex = Math.min(request.leaderCommit, logs.size - 1)
+          }
+          sender ! AppendEntriesResult(curTerm, success = true)
+        } else {
+          sender ! AppendEntriesResult(curTerm, success = false)
+        }
       }
   }
 
@@ -231,7 +233,6 @@ class Server(
           } else {
             false
           }
-//        logInfo("test = " + (votedFor.isEmpty, votedFor.contains(request.candidateId), isUpToDate))
         if ((votedFor.isEmpty || votedFor.get == request.candidateId) && isUpToDate) {
           votedFor = Some(request.candidateId)
           sender ! RequestVoteResult(request.term, success = true)
@@ -323,21 +324,21 @@ class Server(
       adminEndpoint orElse
       irrelevantMsgEndPoint
 
-  def becomeFollower(newTerm: Int, newLeader: Int = -1): Unit = {
+  def becomeFollower(newTerm: Int, newLeader: Option[Int] = None): Unit = {
     curTerm = newTerm
     curState = ServerState.Follower
     votedFor = None
 
-    if (newLeader == -1) { // New leader is unknown
+    if (newLeader.isEmpty) { // New leader is unknown
       if (curTerm == 0) {
         logInfo(s"At term $curTerm, start up as follower")
       } else {
-        logInfo(s"At term $curTerm, unknown new leader detected")
+        logInfo(s"At term $curTerm, unknown new leader detected, step down to follower")
       }
       curLeaderId = None
     } else { // New leader id is given
-      logInfo(s"At term $curTerm, new leader $newLeader detected")
-      curLeaderId = Some(newLeader)
+      logInfo(s"At term $curTerm, new leader $newLeader detected, step down to follower")
+      curLeaderId = newLeader
       for {
         leaderId <- curLeaderId
         leaderRef <- members.get(leaderId)

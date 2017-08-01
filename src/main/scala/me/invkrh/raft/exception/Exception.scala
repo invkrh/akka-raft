@@ -1,6 +1,6 @@
 package me.invkrh.raft.exception
 
-import me.invkrh.raft.message.RPCResponse
+import me.invkrh.raft.message.{Command, RPCResponse}
 
 final case class HeartbeatIntervalException()
     extends RuntimeException("Heartbeat interval should be smaller than the election time")
@@ -34,5 +34,8 @@ final case class InvalidArgumentsException(argsStr: String)
 final case class EmptyMembershipException()
     extends RuntimeException(s"No members are given during initialization")
 
-final case class invalidResponseException(response: RPCResponse, curTerm: Int)
+final case class InvalidResponseException(response: RPCResponse, curTerm: Int)
     extends RuntimeException(s"Response $response is not valid at term $curTerm")
+
+final case class LogMatchingPropertyException(cmd1: Command, cmd2: Command)
+    extends RuntimeException(s"Different commands [$cmd1, $cmd2] on the same index with same term")

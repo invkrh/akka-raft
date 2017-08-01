@@ -6,7 +6,7 @@ case class AppendEntries(
   leaderId: Int,
   prevLogIndex: Int,
   prevLogTerm: Int,
-  entries: Seq[LogEntry],
+  entries: List[LogEntry],
   leaderCommit: Int
 ) extends RPCRequest
 case class RequestVote(term: Int, candidateId: Int, lastLogIndex: Int, lastLogTerm: Int)
