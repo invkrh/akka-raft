@@ -1,6 +1,5 @@
 package me.invkrh.raft.core
 
-import scala.collection.mutable.ArrayBuffer
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.FiniteDuration
 
@@ -11,6 +10,7 @@ import akka.util.Timeout
 import me.invkrh.raft.message._
 import me.invkrh.raft.util.Logging
 
+// TODO: ADD test
 sealed trait MessageHub extends Logging {
   def term: Int
   def selfId: Int
@@ -20,6 +20,7 @@ sealed trait MessageHub extends Logging {
 
   implicit def ec: ExecutionContext
 
+  // TODO: think of retrying request
   def retry[T](ft: Future[T], delay: FiniteDuration, retries: Int, retryMsg: String = "")(
     implicit scheduler: Scheduler
   ): Future[T] = {

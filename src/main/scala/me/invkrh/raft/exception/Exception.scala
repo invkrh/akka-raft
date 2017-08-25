@@ -39,3 +39,9 @@ final case class InvalidResponseException(response: RPCResponse, curTerm: Int)
 
 final case class LogMatchingPropertyException(cmd1: Command, cmd2: Command)
     extends RuntimeException(s"Different commands [$cmd1, $cmd2] on the same index with same term")
+
+final case class UnknownDataStoreTypeException(dst: String)
+    extends RuntimeException(s"Data store type $dst does not exist")
+
+final case class UnknownCommandException(cmd: Command)
+    extends RuntimeException(s"Command $cmd is not valid")

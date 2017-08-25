@@ -6,17 +6,23 @@ import scala.language.postfixOps
 import com.typesafe.config.ConfigFactory
 import org.scalatest.FlatSpecLike
 
+import me.invkrh.raft.storage.DataStore
+
 class ServerConfTest extends FlatSpecLike {
   "ServerConf" should "be built from configure file" in {
     val confStr =
       """
-        |election.timeout.min.ms=150
-        |election.timeout.max.ms=150
-        |heartbeat.interval.ms=100
+        |election.timeout.min.ms = 150
+        |election.timeout.max.ms = 150
+        |heartbeat.interval.ms = 100
+        |datastore.type = memory
       """.stripMargin
     val config = ConfigFactory.parseString(confStr)
-    assertResult(ServerConf(150 millis, 150 millis, 100 millis)) {
-      ServerConf(config)
-    }
+
+    val result = ServerConf(config)
+    val expected =
+      ServerConf(150 millis, 150 millis, 100 millis, DataStore(config.getConfig("datastore")))
+
+    assertResult(expected) { result }
   }
 }

@@ -8,7 +8,8 @@ import akka.pattern.ask
 import akka.util.Timeout
 
 import me.invkrh.raft.kit.RaftTestHarness
-import me.invkrh.raft.message.{CommandResponse, Membership, Set}
+import me.invkrh.raft.message.{CommandResult, CommandSuccess, Membership, SET}
+import me.invkrh.raft.storage.MemoryStore
 
 class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
 
@@ -17,7 +18,7 @@ class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
       val num = 5
       val memberDict = List
         .tabulate(num) { i =>
-          val ref = Server.run(i, 1000 millis, 1500 millis, 100 millis, s"svr-$i")
+          val ref = Server.run(i, 1000 millis, 1500 millis, 100 millis, MemoryStore(), s"svr-$i")
           i -> ref
         }
         .toMap
@@ -26,10 +27,10 @@ class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
         case (_, serverRef) => serverRef ! Membership(memberDict)
       }
 
-      implicit val timeout = Timeout(5 seconds)
-      val future = (memberDict.apply(1) ? Set("x", 1)).mapTo[CommandResponse]
-      assertResult(CommandResponse(success = true)) {
-        Await.result(future, 5 seconds)
+      implicit val timeout = Timeout(3 seconds)
+      val future = (memberDict.apply(1) ? SET("x", 1)).mapTo[CommandResult]
+      assertResult(CommandSuccess(None)) {
+        Await.result(future, 3 seconds)
       }
     }
   }

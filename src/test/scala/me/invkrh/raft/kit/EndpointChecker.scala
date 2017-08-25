@@ -10,6 +10,7 @@ import akka.testkit.TestProbe
 
 import me.invkrh.raft.core.Server
 import me.invkrh.raft.message.{AppendEntries, LogEntry, Membership, RequestVote, RequestVoteResult}
+import me.invkrh.raft.storage.MemoryStore
 import me.invkrh.raft.util.UID
 
 sealed trait EndpointChecker {
@@ -68,7 +69,10 @@ sealed trait EndpointChecker {
       )
     val server: ActorRef = {
       val pb = TestProbe()
-      supervisor.tell(Server.props(id, electionTime, electionTime, tickTime), pb.ref)
+      supervisor.tell(
+        Server.props(id, electionTime, electionTime, tickTime, new MemoryStore()),
+        pb.ref
+      )
       pb.expectMsgType[ActorRef]
     }
     val dict = probes.zipWithIndex.map {

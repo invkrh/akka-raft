@@ -33,6 +33,7 @@ case class Reply(msg: RaftMessage) extends ProbeCheck {
 case class MinorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None)
     extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
+    val minor = (probes.size + 1) / 2 - 1
     probes.take(1) foreach (_ reply msg)
     msgForOthers match {
       case Some(other) => probes.drop(probes.length - 1) foreach (_ reply other)
@@ -44,9 +45,10 @@ case class MinorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None
 case class MajorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None)
     extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
-    probes.take(probes.length - 1) foreach (_ reply msg)
+    val major = (probes.size + 1) / 2 + 1
+    probes.take(major) foreach (_ reply msg)
     msgForOthers match {
-      case Some(other) => probes.drop(1) foreach (_ reply other)
+      case Some(other) => probes.drop(major) foreach (_ reply other)
       case None =>
     }
   }

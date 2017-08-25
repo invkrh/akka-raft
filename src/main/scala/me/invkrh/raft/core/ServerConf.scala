@@ -5,10 +5,13 @@ import scala.language.postfixOps
 
 import com.typesafe.config.Config
 
+import me.invkrh.raft.storage.DataStore
+
 case class ServerConf(
   minElectionTime: FiniteDuration,
   maxElectionTime: FiniteDuration,
-  tickTime: FiniteDuration
+  tickTime: FiniteDuration,
+  dataStore: DataStore
 )
 
 object ServerConf {
@@ -16,6 +19,7 @@ object ServerConf {
     val minElectionTime = config.getInt("election.timeout.min.ms").millis
     val maxElectionTime = config.getInt("election.timeout.max.ms").millis
     val tickTime = config.getInt("heartbeat.interval.ms").millis
-    ServerConf(minElectionTime, maxElectionTime, tickTime)
+    val dataStore = DataStore(config.getConfig("datastore"))
+    ServerConf(minElectionTime, maxElectionTime, tickTime, dataStore)
   }
 }

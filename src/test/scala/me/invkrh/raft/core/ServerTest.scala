@@ -5,61 +5,123 @@ import scala.language.postfixOps
 
 import akka.actor.PoisonPill
 
-import me.invkrh.raft.exception.{
-  HeartbeatIntervalException,
-  LogMatchingPropertyException,
-  MultiLeaderException
-}
-import me.invkrh.raft.kit.{RaftTestHarness, _}
+import me.invkrh.raft.exception._
+import me.invkrh.raft.kit._
 import me.invkrh.raft.message._
+import me.invkrh.raft.storage.MemoryStore
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
+  //////////////////////////////////////////////////////////////////////////////////////////////////
+  //  Log Replication
+  //////////////////////////////////////////////////////////////////////////////////////////////////
 
-  "Log synchronization" should {
+  "Command processing" should {
+    "resend command to leader if leader is elected" in {
+//      new FollowerEndPointChecker()
+//        .setActions(
+//          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)), // 1 is the id of leader
+//          Expect(AppendEntriesResult(2, success = true)), // leader is set
+//          Tell(SET("x", 1)), // reuse leader ref as client ref
+//          Tell(SET("y", 2)),
+//          FishForMsg { case _: Command => true },
+//          FishForMsg { case _: Command => true }
+//        )
+//        .run()
+    }
+
+    "respond commands received right after becoming candidate " +
+      "when it finally become leader" in {
+//      new CandidateEndPointChecker()
+//        .setActions(
+//          Tell(SET("x", 1)),
+//          Tell(SET("y", 2)),
+//          Reply(RequestVoteResult(1, success = true)),
+//          FishForMsg { case _: CommandResult => true },
+//          FishForMsg { case _: CommandResult => true }
+//        )
+//        .run()
+    }
+  }
+
+  "Server.findNewCommitIndex" should {
+
+    def genLogs(n: Int, term: Int): List[LogEntry] = {
+      List.tabulate(n + 10) { i =>
+        if (i != n) {
+          LogEntry(term - 1, Init)
+        } else {
+          LogEntry(term, Init)
+        }
+      }
+    }
+
+    "find right new commit index" in {
+      assertResult(Some(31)) {
+        Server.findNewCommitIndex(20, List(20, 30, 31, 32, 33, 34), genLogs(31, 3), 3)
+      }
+      assertResult(Some(31)) {
+        Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genLogs(31, 3), 3)
+      }
+    }
+
+    "return None if all matchIndex is smaller than commitIndex" in {
+      assertResult(None) {
+        Server.findNewCommitIndex(21, List(10, 13, 11, 12, 15), genLogs(31, 3), 3)
+      }
+    }
+
+    "return None if eligible value has a different term with current term" in {
+      assertResult(None) {
+        Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genLogs(31, 3), 4)
+      }
+    }
+  }
+
+  "Server.syncLogsByRequest" should {
     def req(prevIndex: Int, entries: LogEntry*): AppendEntries =
       AppendEntries(0, 0, prevIndex, 0, entries.toList, 0)
 
     val logs = List(
       LogEntry(0, Init),
-      LogEntry(0, Set("x", 1)),
-      LogEntry(0, Set("x", 2)),
-      LogEntry(0, Set("x", 3)),
-      LogEntry(0, Set("x", 4)),
-      LogEntry(0, Set("x", 5))
+      LogEntry(0, SET("x", 1)),
+      LogEntry(0, SET("x", 2)),
+      LogEntry(0, SET("x", 3)),
+      LogEntry(0, SET("x", 4)),
+      LogEntry(0, SET("x", 5))
     )
 
-    "merger request logs and local logs" in {
-      val request = req(3, LogEntry(0, Set("x", 4)), LogEntry(0, Set("x", 5)))
+    "merge request logs and local logs" in {
+      val request = req(3, LogEntry(0, SET("x", 4)), LogEntry(0, SET("x", 5)))
       assertResult(logs) {
-        Server.syncLogsByRequest(request, logs)
+        Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "throw exception if log matching property is broken" in {
-      val request = req(3, LogEntry(0, Set("x", 1)), LogEntry(0, Set("x", 2)))
+      val request = req(3, LogEntry(0, SET("x", 1)), LogEntry(0, SET("x", 2)))
       intercept[LogMatchingPropertyException] {
-        Server.syncLogsByRequest(request, logs)
+        Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "drop tailing entries from local logs if their indices are larger than request logs size" in {
-      val request = req(2, LogEntry(0, Set("x", 3)))
+      val request = req(2, LogEntry(0, SET("x", 3)))
       assertResult(logs.take(4)) {
-        Server.syncLogsByRequest(request, logs)
+        Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "add new entries if prevIndex points to the last log" in {
-      val request = req(5, LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))
-      assertResult(logs ::: List(LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))) {
-        Server.syncLogsByRequest(request, logs)
+      val request = req(5, LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))
+      assertResult(logs ::: List(LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))) {
+        Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "replace logs after inconsistent entry" in {
-      val request = req(3, LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))
-      assertResult(logs.take(4) ::: List(LogEntry(1, Set("x", 1)), LogEntry(1, Set("x", 2)))) {
-        Server.syncLogsByRequest(request, logs)
+      val request = req(3, LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))
+      assertResult(logs.take(4) ::: List(LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))) {
+        Server.syncLogsFromLeader(request, logs)
       }
     }
   }
@@ -73,14 +135,17 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "throw exception when election time is shorter than heartbeat interval" in {
       intercept[HeartbeatIntervalException] {
         val server =
-          system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis), "svr")
+          system.actorOf(
+            Server.props(0, 100 millis, 100 millis, 150 millis, new MemoryStore()),
+            "svr"
+          )
         server ! PoisonPill
       }
     }
 
     "start if none of the bootstrap members are resolved" in {
       val server =
-        system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis))
+        system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, new MemoryStore()))
       expectNoMsg()
       server ! PoisonPill
     }
@@ -195,34 +260,6 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .run()
     }
 
-    "resend command to leader if leader is elected" in {
-      new FollowerEndPointChecker()
-        .setActions(
-          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)), // 1 is the id of leader
-          Expect(AppendEntriesResult(2, success = true)), // leader is set
-          Tell(Set("x", 1)), // reuse leader ref as client ref
-          Tell(Set("y", 2)),
-          FishForMsg { case _: Command => true },
-          FishForMsg { case _: Command => true }
-        )
-        .run()
-    }
-
-    "respond command received at term = 0 (right after init) when it becomes leader" in {
-      val checker = new FollowerEndPointChecker().setId(13)
-      checker
-        .setElectionTime(1 seconds) // keep server in initialized follower state longer
-        .setActions(
-          Tell(Set("x", 1)), // reuse probe as client
-          Tell(Set("y", 2)), // reuse probe as client
-          Expect(RequestVote(1, checker.getId, 0, 0)),
-          Reply(RequestVoteResult(1, success = true)),
-          FishForMsg { case CommandResponse(true, _) => true },
-          FishForMsg { case CommandResponse(true, _) => true }
-        )
-        .run()
-    }
-
     "return server status after receiving GetStatus request" in {
       val checker = new FollowerEndPointChecker()
       val term = 10
@@ -280,19 +317,6 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Within(electionTimeout, electionTimeout, Expect(RequestVote(2, checker.getId, 0, 0))),
           Within(electionTimeout, electionTimeout, Expect(RequestVote(3, checker.getId, 0, 0))),
           Within(electionTimeout, electionTimeout, Expect(RequestVote(4, checker.getId, 0, 0)))
-        )
-        .run()
-    }
-
-    "respond commands received right after becoming candidate " +
-      "when it finally become leader" in {
-      new CandidateEndPointChecker()
-        .setActions(
-          Tell(Set("x", 1)),
-          Tell(Set("y", 2)),
-          Reply(RequestVoteResult(1, success = true)),
-          FishForMsg { case CommandResponse(true, _) => true },
-          FishForMsg { case CommandResponse(true, _) => true }
         )
         .run()
     }
@@ -518,4 +542,6 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .run()
     }
   }
+
+  // Log compaction
 }

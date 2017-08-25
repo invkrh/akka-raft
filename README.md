@@ -9,7 +9,7 @@ An implementation of raft consensus algorithm based on akka
 
 * [x] Deployment scripts
 * [x] Leader election
-* [ ] Log replication
+* [x] Log replication
 * [ ] Cluster membership changes
 * [ ] Log compaction
 * [ ] Client interaction
