@@ -1,7 +1,7 @@
 package me.invkrh.raft.storage
 
 import me.invkrh.raft.kit.TestHarness
-import me.invkrh.raft.message.{CommandSuccess, DEL, GET, Init, SET}
+import me.invkrh.raft.message.ClientMessage._
 
 class DataStoreTest extends TestHarness {
   "MemoryStore" should {

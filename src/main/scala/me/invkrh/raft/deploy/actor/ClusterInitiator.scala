@@ -2,7 +2,8 @@ package me.invkrh.raft.deploy.actor
 
 import akka.actor.{Actor, ActorRef, Props}
 
-import me.invkrh.raft.message.{Membership, Register, ServerId, ServerIdRequest}
+import me.invkrh.raft.message.AdminMessage._
+import me.invkrh.raft.message.DeployMessage._
 import me.invkrh.raft.util.Logging
 
 object ClusterInitiator {

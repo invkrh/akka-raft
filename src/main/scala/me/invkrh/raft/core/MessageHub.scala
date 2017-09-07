@@ -7,7 +7,8 @@ import akka.actor.{ActorRef, Scheduler}
 import akka.pattern.{after, ask, AskTimeoutException}
 import akka.util.Timeout
 
-import me.invkrh.raft.message._
+import me.invkrh.raft.message.ClientMessage._
+import me.invkrh.raft.message.RPCMessage._
 import me.invkrh.raft.util.Logging
 
 // TODO: ADD test

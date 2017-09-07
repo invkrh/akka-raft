@@ -5,7 +5,7 @@ import scala.collection.mutable
 import com.typesafe.config.Config
 
 import me.invkrh.raft.exception.{UnknownCommandException, UnknownDataStoreTypeException}
-import me.invkrh.raft.message.{Command, _}
+import me.invkrh.raft.message.ClientMessage._
 
 trait DataStore {
   def applyCommand(cmd: Command): CommandResult

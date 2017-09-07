@@ -8,7 +8,9 @@ import akka.testkit.TestProbe
 
 import me.invkrh.raft.exception._
 import me.invkrh.raft.kit.{Tell, _}
-import me.invkrh.raft.message._
+import me.invkrh.raft.message.AdminMessage._
+import me.invkrh.raft.message.ClientMessage._
+import me.invkrh.raft.message.RPCMessage._
 import me.invkrh.raft.storage.MemoryStore
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>

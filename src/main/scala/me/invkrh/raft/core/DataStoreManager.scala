@@ -2,7 +2,7 @@ package me.invkrh.raft.core
 
 import akka.actor.{Actor, Props}
 
-import me.invkrh.raft.message.LogEntry
+import me.invkrh.raft.message.ClientMessage.LogEntry
 import me.invkrh.raft.storage.DataStore
 import me.invkrh.raft.util.Logging
 

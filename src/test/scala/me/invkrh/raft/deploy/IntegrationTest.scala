@@ -8,7 +8,7 @@ import akka.util.Timeout
 
 import me.invkrh.raft.deploy.remote.{Initiator, Launcher}
 import me.invkrh.raft.kit.TestHarness
-import me.invkrh.raft.message.{GetStatus, Status}
+import me.invkrh.raft.message.AdminMessage._
 import me.invkrh.raft.util.NetworkUtils._
 
 class IntegrationTest extends TestHarness { self =>

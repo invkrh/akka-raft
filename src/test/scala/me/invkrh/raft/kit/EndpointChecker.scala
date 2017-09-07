@@ -9,8 +9,10 @@ import akka.pattern.{gracefulStop, AskTimeoutException}
 import akka.testkit.TestProbe
 
 import me.invkrh.raft.core.Server
-import me.invkrh.raft.message.{AppendEntries, LogEntry, Membership, RequestVote, RequestVoteResult}
-import me.invkrh.raft.storage.{DataStore, MemoryStore}
+import me.invkrh.raft.message.AdminMessage.Membership
+import me.invkrh.raft.message.ClientMessage.LogEntry
+import me.invkrh.raft.message.RPCMessage._
+import me.invkrh.raft.storage.MemoryStore
 import me.invkrh.raft.util.UID
 
 sealed trait EndpointChecker {

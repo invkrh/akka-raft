@@ -1,6 +1,7 @@
 package me.invkrh.raft.exception
 
-import me.invkrh.raft.message.{Command, RPCResponse}
+import me.invkrh.raft.message.ClientMessage._
+import me.invkrh.raft.message.RPCMessage._
 
 final case class HeartbeatIntervalException()
     extends RuntimeException("Heartbeat interval should be smaller than the election time")

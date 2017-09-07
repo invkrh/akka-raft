@@ -1,7 +1,7 @@
 package me.invkrh.raft.deploy.actor
 
 import me.invkrh.raft.kit.RaftTestHarness
-import me.invkrh.raft.message.{ServerId, ServerIdRequest}
+import me.invkrh.raft.message.DeployMessage._
 
 class ClusterInitiatorTest extends RaftTestHarness("ClusterInitiatorTest") {
   "ClusterInitiator" should {

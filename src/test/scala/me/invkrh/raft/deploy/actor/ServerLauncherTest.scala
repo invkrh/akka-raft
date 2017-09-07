@@ -13,7 +13,7 @@ import me.invkrh.raft.core.ServerConf
 import me.invkrh.raft.deploy.remote.RemoteProvider
 import me.invkrh.raft.exception.UnexpectedSenderException
 import me.invkrh.raft.kit.{ExceptionDetector, RaftTestHarness}
-import me.invkrh.raft.message.{ServerId, ServerIdRequest}
+import me.invkrh.raft.message.DeployMessage._
 
 class ServerLauncherTest extends RaftTestHarness("ServerLauncherTest") {
   "ServerLauncher" should {

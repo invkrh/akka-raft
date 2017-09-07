@@ -1,9 +1,10 @@
-package me.invkrh.raft.message
+package me.invkrh.raft.core
 
 import scala.collection.mutable.ArrayBuffer
 
 import akka.actor.ActorRef
 
+import me.invkrh.raft.message.RaftMessage
 import me.invkrh.raft.util.Logging
 
 class MessageCache[T <: RaftMessage](id: Int) extends Logging {

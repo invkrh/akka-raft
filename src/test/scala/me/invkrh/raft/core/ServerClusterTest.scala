@@ -8,7 +8,8 @@ import akka.pattern.ask
 import akka.util.Timeout
 
 import me.invkrh.raft.kit.RaftTestHarness
-import me.invkrh.raft.message.{CommandResult, CommandSuccess, Membership, SET}
+import me.invkrh.raft.message.AdminMessage._
+import me.invkrh.raft.message.ClientMessage._
 import me.invkrh.raft.storage.MemoryStore
 
 class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
