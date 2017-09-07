@@ -12,6 +12,12 @@ sealed trait ProbeCheck {
   def execute(server: ActorRef, probes: Seq[TestProbe]): Unit
 }
 
+case class Check(action: () => Unit) extends ProbeCheck {
+  override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
+    action()
+  }
+}
+
 case class Expect(msg: RaftMessage) extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     probes foreach { _ expectMsg msg }

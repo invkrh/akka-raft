@@ -21,10 +21,8 @@ object DataStore {
   }
 }
 
-// TODO: Add UT
-case class MemoryStore() extends DataStore {
-
-  val cache = new mutable.HashMap[Any, Any]()
+case class MemoryStore(cache: mutable.HashMap[Any, Any] = new mutable.HashMap())
+    extends DataStore {
 
   override def applyCommand(cmd: Command): CommandResult = {
     try {

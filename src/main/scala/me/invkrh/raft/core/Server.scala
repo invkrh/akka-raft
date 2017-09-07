@@ -46,7 +46,7 @@ object Server {
     system.actorOf(props(id, serverConf), s"$raftServerName-$id")
   }
 
-  def syncLogsFromLeader(request: AppendEntries, logs: List[LogEntry]): List[LogEntry] = {
+  def syncLogsFromLeader(request: AppendEntries, logs: List[LogEntry]): (List[LogEntry], Int) = {
     def logMerge(requestLogs: List[LogEntry], localLogs: List[LogEntry]): List[LogEntry] = {
       (requestLogs, localLogs) match {
         case (x +: xs, y +: ys) =>
@@ -58,12 +58,14 @@ object Server {
           } else {
             requestLogs
           }
-        case (Nil, _) => Nil
+        case (Nil, _) => localLogs
         case (_, Nil) => requestLogs
       }
     }
     val (before, after) = logs.splitAt(request.prevLogIndex + 1)
-    before ++ logMerge(request.entries, after)
+    val lastNewEntryIndex = request.entries.size + request.prevLogIndex
+    val mergedLogs = before ++ logMerge(request.entries, after)
+    (mergedLogs, lastNewEntryIndex)
   }
 
   def findNewCommitIndex(
@@ -97,7 +99,7 @@ class Server(
 
   import context._
   implicit val scheduler: Scheduler = system.scheduler
-  val dataStoreManager: ActorRef = context.actorOf(DataStoreManager.props(dataStore))
+  val dataStoreManager: ActorRef = context.actorOf(DataStoreManager.props(dataStore), "dsm")
 
   // Persistent state on all servers
   private var curTerm = 0
@@ -135,6 +137,8 @@ class Server(
   def requestSetCommitIndex(commitIndex: Int): Unit = {
     this.commitIndex = commitIndex
     if (commitIndex > lastApplied) {
+      logDebug("Applying command to state machine")
+      logDebug("dataStoreManager: " + dataStoreManager)
       dataStoreManager !
         ApplyLogsRequest(
           logs.slice(lastApplied + 1, commitIndex + 1), // end is exclusive
@@ -154,7 +158,6 @@ class Server(
       case ex @ Exchange(request, response, fid) =>
         val ref = members(fid)
         response match {
-
           // Reply to leader
           case AppendEntriesResult(term, false) if term == curTerm =>
             logDebug(s"AppendEntries is failed on server $fid at term $term (address: $ref)")
@@ -215,7 +218,7 @@ class Server(
 
   def adminEndpoint: Receive = {
     case MembershipRequest => sender ! Membership(members)
-    case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId)
+    case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId, logs)
     // TODO: Add more admin endpoint
   }
 
@@ -235,16 +238,18 @@ class Server(
       if (request.term < curTerm) {
         sender ! AppendEntriesResult(curTerm, success = false)
       } else {
+        // Same term with different leader
         if (request.term == curTerm && curLeaderId.exists(_ != request.leaderId)) {
           throw MultiLeaderException(id, request.leaderId, request.term)
         }
         becomeFollower(request.term, Some(request.leaderId))
         if (logs.size - 1 >= request.prevLogIndex &&
           logs(request.prevLogIndex).term == request.prevLogTerm) {
-
-          logs = Server.syncLogsFromLeader(request, logs)
-          if (request.leaderCommit > commitIndex) {
-            requestSetCommitIndex(Math.min(request.leaderCommit, logs.size - 1))
+          val (mergedLogs, lastNewEntryIndex) = Server.syncLogsFromLeader(request, logs)
+          logs = mergedLogs
+          if (request.leaderCommit > commitIndex) { // TODO: add test
+            logDebug("Updating local commit index")
+            requestSetCommitIndex(Math.min(request.leaderCommit, lastNewEntryIndex))
           }
           sender ! AppendEntriesResult(curTerm, success = true)
         } else {
@@ -300,7 +305,9 @@ class Server(
   }
 
   def commitIndexACKEndPoint: Receive = {
-    case CommandApplied(n) => this.lastApplied = n
+    case CommandApplied(n) =>
+      logDebug("command applied")
+      this.lastApplied = n
   }
 
   def irrelevantMsgEndPoint: Receive = {

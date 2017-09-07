@@ -4,6 +4,7 @@ import akka.actor.{Actor, Props}
 
 import me.invkrh.raft.message.LogEntry
 import me.invkrh.raft.storage.DataStore
+import me.invkrh.raft.util.Logging
 
 case class ApplyLogsRequest(logs: List[LogEntry], commitIndex: Int)
 case class CommandApplied(n: Int)
@@ -14,9 +15,10 @@ object DataStoreManager {
   }
 }
 
-class DataStoreManager(dataStore: DataStore) extends Actor {
+class DataStoreManager(dataStore: DataStore) extends Actor with Logging {
   override def receive: Receive = {
     case ApplyLogsRequest(logs, commitIndex) =>
+      logDebug("receive log: " + logs)
       logs foreach {
         case LogEntry(_, cmd, clientRef) =>
           clientRef ! dataStore.applyCommand(cmd)

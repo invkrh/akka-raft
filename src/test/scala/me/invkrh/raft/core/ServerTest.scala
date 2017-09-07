@@ -4,42 +4,79 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 import akka.actor.PoisonPill
+import akka.testkit.TestProbe
 
 import me.invkrh.raft.exception._
-import me.invkrh.raft.kit._
+import me.invkrh.raft.kit.{Tell, _}
 import me.invkrh.raft.message._
 import me.invkrh.raft.storage.MemoryStore
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
+
+  private val refHolder = TestProbe().ref
+  def dummyEntry(term: Int, cmd: Command): LogEntry = {
+    LogEntry(term, cmd, refHolder)
+  }
+
+  def heartbeat(term: Int, leaderId: Int): AppendEntries =
+    AppendEntries(term, leaderId, 0, 0, Nil, 0)
+
   //////////////////////////////////////////////////////////////////////////////////////////////////
   //  Log Replication
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
-  "Command processing" should {
-    "resend command to leader if leader is elected" in {
-//      new FollowerEndPointChecker()
-//        .setActions(
-//          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)), // 1 is the id of leader
-//          Expect(AppendEntriesResult(2, success = true)), // leader is set
-//          Tell(SET("x", 1)), // reuse leader ref as client ref
-//          Tell(SET("y", 2)),
-//          FishForMsg { case _: Command => true },
-//          FishForMsg { case _: Command => true }
-//        )
-//        .run()
+  "Log replication on follower side" should {
+
+    def followerLogReplicationCheck(
+      term: Int,
+      prevIndex: Int,
+      prevTerm: Int,
+      leaderCommit: Int,
+      isAccept: Boolean
+    ): MemoryStore = {
+      val checker = new FollowerEndPointChecker()
+      val leaderId = 1
+      checker
+        .setActions(
+          Tell(heartbeat(term, leaderId)),
+          Expect(AppendEntriesResult(term, success = true)),
+          Tell(
+            AppendEntries(
+              term,
+              leaderId,
+              prevIndex,
+              prevTerm,
+              List(dummyEntry(1, SET("x", 1))),
+              leaderCommit
+            )
+          ),
+          Expect(AppendEntriesResult(term, success = isAccept))
+        )
+        .run()
+      checker.memoryStore
     }
 
-    "respond commands received right after becoming candidate " +
-      "when it finally become leader" in {
-//      new CandidateEndPointChecker()
-//        .setActions(
-//          Tell(SET("x", 1)),
-//          Tell(SET("y", 2)),
-//          Reply(RequestVoteResult(1, success = true)),
-//          FishForMsg { case _: CommandResult => true },
-//          FishForMsg { case _: CommandResult => true }
-//        )
-//        .run()
+    "accept AppendEntry request and apply command" in {
+      val store = followerLogReplicationCheck(1, 0, 0, 1, isAccept = true)
+      assertResult(Some(1)) {
+        store.cache.get("x")
+      }
+    }
+
+    "accept AppendEntry request but not apply command if leader commit is not bigger than " +
+      "local commit index" in {
+      val store = followerLogReplicationCheck(1, 0, 0, 0, isAccept = true)
+      assertResult(None) {
+        store.cache.get("x")
+      }
+    }
+
+    "reject AppendEntry request if local logs are outdated" in {
+      followerLogReplicationCheck(1, 1, 1, 0, isAccept = false)
+    }
+
+    "reject AppendEntry request if previous log term is not matched" in {
+      followerLogReplicationCheck(1, 0, 2, 0, isAccept = false)
     }
   }
 
@@ -48,9 +85,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     def genLogs(n: Int, term: Int): List[LogEntry] = {
       List.tabulate(n + 10) { i =>
         if (i != n) {
-          LogEntry(term - 1, Init)
+          dummyEntry(term - 1, Init)
         } else {
-          LogEntry(term, Init)
+          dummyEntry(term, Init)
         }
       }
     }
@@ -78,49 +115,53 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
   }
 
   "Server.syncLogsByRequest" should {
+    val probe = TestProbe()
+
     def req(prevIndex: Int, entries: LogEntry*): AppendEntries =
       AppendEntries(0, 0, prevIndex, 0, entries.toList, 0)
 
     val logs = List(
-      LogEntry(0, Init),
-      LogEntry(0, SET("x", 1)),
-      LogEntry(0, SET("x", 2)),
-      LogEntry(0, SET("x", 3)),
-      LogEntry(0, SET("x", 4)),
-      LogEntry(0, SET("x", 5))
+      dummyEntry(0, Init),
+      dummyEntry(0, SET("x", 1)),
+      dummyEntry(0, SET("x", 2)),
+      dummyEntry(0, SET("x", 3)),
+      dummyEntry(0, SET("x", 4)),
+      dummyEntry(0, SET("x", 5))
     )
 
     "merge request logs and local logs" in {
-      val request = req(3, LogEntry(0, SET("x", 4)), LogEntry(0, SET("x", 5)))
-      assertResult(logs) {
+      val request = req(3, dummyEntry(0, SET("x", 4)), dummyEntry(0, SET("x", 5)))
+      assertResult((logs, 5)) {
         Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "throw exception if log matching property is broken" in {
-      val request = req(3, LogEntry(0, SET("x", 1)), LogEntry(0, SET("x", 2)))
+      val request = req(3, dummyEntry(0, SET("x", 1)), dummyEntry(0, SET("x", 2)))
       intercept[LogMatchingPropertyException] {
         Server.syncLogsFromLeader(request, logs)
       }
     }
 
-    "drop tailing entries from local logs if their indices are larger than request logs size" in {
-      val request = req(2, LogEntry(0, SET("x", 3)))
-      assertResult(logs.take(4)) {
+    "return the index of the last new entry if local logs is longer than logs in the request" in {
+      val request = req(2, dummyEntry(0, SET("x", 3)))
+      assertResult((logs, 3)) {
         Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "add new entries if prevIndex points to the last log" in {
-      val request = req(5, LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))
-      assertResult(logs ::: List(LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))) {
+      val request = req(5, dummyEntry(1, SET("x", 1)), dummyEntry(1, SET("x", 2)))
+      val mergedLogs = logs ::: List(dummyEntry(1, SET("x", 1)), dummyEntry(1, SET("x", 2)))
+      assertResult((mergedLogs, mergedLogs.size - 1)) {
         Server.syncLogsFromLeader(request, logs)
       }
     }
 
     "replace logs after inconsistent entry" in {
-      val request = req(3, LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))
-      assertResult(logs.take(4) ::: List(LogEntry(1, SET("x", 1)), LogEntry(1, SET("x", 2)))) {
+      val request = req(3, dummyEntry(1, SET("x", 1)), dummyEntry(1, SET("x", 2)))
+      val mergedLogs = logs.take(4) ::: List(dummyEntry(1, SET("x", 1)), dummyEntry(1, SET("x", 2)))
+      assertResult((mergedLogs, 5)) {
         Server.syncLogsFromLeader(request, logs)
       }
     }
@@ -135,10 +176,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "throw exception when election time is shorter than heartbeat interval" in {
       intercept[HeartbeatIntervalException] {
         val server =
-          system.actorOf(
-            Server.props(0, 100 millis, 100 millis, 150 millis, new MemoryStore()),
-            "svr"
-          )
+          system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis, MemoryStore()), "svr")
         server ! PoisonPill
       }
     }
@@ -153,30 +191,34 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
   "Follower" should {
 
-    "accept AppendEntries when the term of the message is equal to his own" in {
+    "resend command to leader if leader is elected" in {
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(0, 1, 0, 0, List[LogEntry](), 0)),
-          Expect(AppendEntriesResult(0, success = true))
+          Tell(heartbeat(2, 1)), // 1 is the id of leader
+          Expect(AppendEntriesResult(2, success = true)), // leader is set
+          Tell(SET("x", 1)), // reuse leader ref as client ref
+          Tell(SET("y", 2)),
+          FishForMsg { case _: Command => true },
+          FishForMsg { case _: Command => true }
         )
+        .run()
+    }
+
+    "accept AppendEntries when the term of the message is equal to his own" in {
+      new FollowerEndPointChecker()
+        .setActions(Tell(heartbeat(0, 1)), Expect(AppendEntriesResult(0, success = true)))
         .run()
     }
 
     "reject AppendEntries when the term of the message is smaller than his own" in {
       new FollowerEndPointChecker()
-        .setActions(
-          Tell(AppendEntries(-1, 0, 0, 0, List[LogEntry](), 0)),
-          Expect(AppendEntriesResult(0, success = false))
-        )
+        .setActions(Tell(heartbeat(-1, 0)), Expect(AppendEntriesResult(0, success = false)))
         .run()
     }
 
     "reply AppendEntries with larger term which is received with the message" in {
       new FollowerEndPointChecker()
-        .setActions(
-          Tell(AppendEntries(2, 0, 0, 0, List[LogEntry](), 0)),
-          Expect(AppendEntriesResult(2, success = true))
-        )
+        .setActions(Tell(heartbeat(2, 0)), Expect(AppendEntriesResult(2, success = true)))
         .run()
     }
 
@@ -251,7 +293,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             tickTime * heartbeatNum + electionTime * 2,
             Rep(
               heartbeatNum,
-              Delay(tickTime, Tell(AppendEntries(0, 1, 0, 0, List[LogEntry](), 0))),
+              Delay(tickTime, Tell(heartbeat(0, 1))),
               Expect(AppendEntriesResult(0, success = true))
             ),
             Expect(RequestVote(1, checker.getId, 0, 0))
@@ -266,7 +308,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val leaderId = 1
       checker
         .setActions(
-          Tell(AppendEntries(term, leaderId, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(term, leaderId)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
@@ -279,9 +321,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val leaderId = 1
       new FollowerEndPointChecker()
         .setActions(
-          Tell(AppendEntries(term, leaderId, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(term, leaderId)),
           Expect(AppendEntriesResult(term, success = true)),
-          Tell(AppendEntries(term, leaderId + 1, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(term, leaderId + 1)),
           FishForMsg { case _: MultiLeaderException => true }
         )
         .run()
@@ -300,7 +342,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Expect(RequestVoteResult(higherTerm, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, higherTerm, ServerState.Follower, None)),
-          Tell(AppendEntries(higherTerm, leaderId, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(higherTerm, leaderId)),
           Expect(AppendEntriesResult(higherTerm, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, higherTerm, ServerState.Follower, Some(leaderId)))
@@ -348,7 +390,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setProbeNum(5)
         .setActions(
           MajorReply(RequestVoteResult(1, success = true)),
-          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0))
+          Expect(heartbeat(1, checker.getId))
         )
         .run()
     }
@@ -384,7 +426,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(RequestVote(2, 1, 0, 0)),
           Expect(RequestVoteResult(2, success = true)),
-          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(2, 1)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -394,9 +436,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       "its current term" in {
       new CandidateEndPointChecker()
         .setActions(
-          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(2, 1)),
           Expect(AppendEntriesResult(2, success = true)),
-          Tell(AppendEntries(2, 1, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(2, 1)),
           Expect(AppendEntriesResult(2, success = true))
         )
         .run()
@@ -406,7 +448,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val checker = new CandidateEndPointChecker()
       checker
         .setActions(
-          Tell(AppendEntries(1, 0, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(1, 0)),
           Expect(AppendEntriesResult(1, success = true)),
           Expect(RequestVote(2, checker.getId, 0, 0))
         )
@@ -416,10 +458,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "reject AppendEntries if its term is smaller than current term" in {
       new CandidateEndPointChecker()
         .setProbeNum(5)
-        .setActions(
-          Tell(AppendEntries(0, 0, 0, 0, List[LogEntry](), 0)),
-          Expect(AppendEntriesResult(1, success = false))
-        )
+        .setActions(Tell(heartbeat(0, 0)), Expect(AppendEntriesResult(1, success = false)))
         .run()
     }
 
@@ -429,7 +468,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       val leaderId = 1
       checker
         .setActions(
-          Tell(AppendEntries(term, leaderId, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(term, leaderId)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
           Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
@@ -444,7 +483,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       new LeaderEndPointChecker()
         .setActions(
           Reply(AppendEntriesResult(1, success = true)),
-          Tell(AppendEntries(1, 2, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(1, 2)),
           FishForMsg { case _: MultiLeaderException => true }
         )
         .run()
@@ -463,9 +502,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
               tickTime,
               tickTime * 2,
               Reply(AppendEntriesResult(1, success = true)),
-              Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
+              Expect(heartbeat(1, checker.getId)),
               Reply(AppendEntriesResult(1, success = true)),
-              Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0))
+              Expect(heartbeat(1, checker.getId))
             )
           )
         )
@@ -479,7 +518,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(RequestVote(term, 1, 0, 0)),
           Expect(RequestVoteResult(term, success = true)),
-          Tell(AppendEntries(term, 1, 0, 0, List[LogEntry](), 0)),
+          Tell(heartbeat(term, 1)),
           Expect(AppendEntriesResult(term, success = true))
         )
         .run()
@@ -506,12 +545,12 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
             AppendEntriesResult(1, success = false),
             Some(AppendEntriesResult(1, success = true))
           ),
-          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
+          Expect(heartbeat(1, checker.getId)),
           MajorReply(
             AppendEntriesResult(1, success = false),
             Some(AppendEntriesResult(1, success = true))
           ),
-          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
+          Expect(heartbeat(1, checker.getId)),
           Reply(AppendEntriesResult(1, success = true))
         )
         .run()
@@ -522,11 +561,11 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setProbeNum(5)
         .setActions(
-          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
+          Expect(heartbeat(1, checker.getId)),
           MinorReply(AppendEntriesResult(1, success = false)),
-          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
+          Expect(heartbeat(1, checker.getId)),
           MajorReply(AppendEntriesResult(1, success = true)),
-          Expect(AppendEntries(1, checker.getId, 0, 0, List[LogEntry](), 0)),
+          Expect(heartbeat(1, checker.getId)),
           Reply(AppendEntriesResult(1, success = true))
         )
         .run()

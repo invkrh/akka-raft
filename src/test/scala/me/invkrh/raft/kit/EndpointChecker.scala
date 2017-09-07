@@ -10,7 +10,7 @@ import akka.testkit.TestProbe
 
 import me.invkrh.raft.core.Server
 import me.invkrh.raft.message.{AppendEntries, LogEntry, Membership, RequestVote, RequestVoteResult}
-import me.invkrh.raft.storage.MemoryStore
+import me.invkrh.raft.storage.{DataStore, MemoryStore}
 import me.invkrh.raft.util.UID
 
 sealed trait EndpointChecker {
@@ -60,8 +60,11 @@ sealed trait EndpointChecker {
     }
   }
 
+  val memoryStore: MemoryStore = MemoryStore()
+
   def run(): Unit = {
-    val probes: List[TestProbe] = List.fill(probeNum)(TestProbe("follower"))
+
+    val probes: List[TestProbe] = List.fill(probeNum)(TestProbe("raft-probe"))
     val supervisor: ActorRef =
       system.actorOf(
         Props(new ExceptionDetector(s"svr-$id", probes.map(_.ref): _*)),
@@ -69,10 +72,7 @@ sealed trait EndpointChecker {
       )
     val server: ActorRef = {
       val pb = TestProbe()
-      supervisor.tell(
-        Server.props(id, electionTime, electionTime, tickTime, new MemoryStore()),
-        pb.ref
-      )
+      supervisor.tell(Server.props(id, electionTime, electionTime, tickTime, memoryStore), pb.ref)
       pb.expectMsgType[ActorRef]
     }
     val dict = probes.zipWithIndex.map {

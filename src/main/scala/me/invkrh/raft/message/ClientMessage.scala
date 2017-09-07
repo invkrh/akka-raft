@@ -30,4 +30,4 @@ sealed trait CommandResult extends RaftMessage
 case class CommandSuccess(payload: Option[Any]) extends CommandResult
 case class CommandFailure(info: String) extends CommandResult
 
-case class LogEntry(term: Int, command: Command, clientRef: ActorRef = null)
+case class LogEntry(term: Int, command: Command, clientRef: ActorRef)
