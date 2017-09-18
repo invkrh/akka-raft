@@ -34,7 +34,8 @@ sealed trait MessageHub extends Logging {
 
   def distributeRPCRequest(timeoutDuration: FiniteDuration): Future[Iterable[Exchange]] = {
     // tighten timeout duration
-    implicit val to = Timeout((timeoutDuration.toMillis * 0.8).toLong, timeoutDuration.unit)
+    implicit val timeout: Timeout =
+      Timeout((timeoutDuration.toMillis * 0.8).toLong, timeoutDuration.unit)
     val exchanges = for {
       (followId, ref) <- members.par if followId != selfId
     } yield {
@@ -50,10 +51,13 @@ sealed trait MessageHub extends Logging {
   }
 }
 
-case class CandidateMessageHub(term: Int, selfId: Int, logs: List[LogEntry])(
-  implicit val members: Map[Int, ActorRef],
-  val ec: ExecutionContext
-) extends MessageHub {
+case class CandidateMessageHub(
+  term: Int,
+  selfId: Int,
+  logs: List[LogEntry],
+  members: Map[Int, ActorRef]
+)(implicit val ec: ExecutionContext)
+    extends MessageHub {
   def request(followerId: Int): RPCRequest = {
     RequestVote(
       term = term,
@@ -69,8 +73,9 @@ case class LeaderMessageHub(
   selfId: Int,
   commitIndex: Int,
   nextIndex: Map[Int, Int],
-  logs: List[LogEntry]
-)(implicit val members: Map[Int, ActorRef], val ec: ExecutionContext)
+  logs: List[LogEntry],
+  members: Map[Int, ActorRef]
+)(implicit val ec: ExecutionContext)
     extends MessageHub {
   def request(followerId: Int): RPCRequest = {
     val lastLogIndex: Int = logs.size - 1

@@ -15,17 +15,64 @@ import me.invkrh.raft.storage.MemoryStore
 
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
-  private val refHolder = TestProbe().ref
-  def dummyEntry(term: Int, cmd: Command): LogEntry = {
-    LogEntry(term, cmd, refHolder)
-  }
-
-  def heartbeat(term: Int, leaderId: Int): AppendEntries =
-    AppendEntries(term, leaderId, 0, 0, Nil, 0)
+  def heartbeat(
+    term: Int,
+    leaderId: Int,
+    prevLogIndex: Int = 0,
+    prevLogTerm: Int = 0,
+    leaderCommit: Int = 0
+  ): AppendEntries =
+    AppendEntries(term, leaderId, prevLogIndex, prevLogTerm, Nil, leaderCommit)
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
   //  Log Replication
   //////////////////////////////////////////////////////////////////////////////////////////////////
+
+  "Log replication on leader side" should {
+    "initialize nextIndex and matchIndex" in {
+      new LeaderEndPointChecker()
+        .setActions(
+          Reply(AppendEntriesResult(1, success = true)),
+          Tell(GetStatus),
+          Expect(
+            Status(
+              42,
+              1,
+              ServerState.Leader,
+              Some(42),
+              Map(1 -> 1, 42 -> 1),
+              Map(1 -> 0, 42 -> 0),
+              0,
+              0
+            )
+          )
+        )
+        .run()
+    }
+
+    "process message exchanges" in {
+      new LeaderEndPointChecker()
+        .setActions(
+          Reply(AppendEntriesResult(1, success = true)),
+          Rep(5, Tell(SET("x", 1))), // leader receives 5 commands
+          FishForMsg { case req: AppendEntries if req.entries.size == 5 => true },
+          Reply(AppendEntriesResult(1, success = true)),
+          Expect(heartbeat(1, 42, 5, 1)),
+          Tell(GetStatus),
+          FishForMsg {
+            case st: Status
+                if st.nextIndex == Map(42 -> 1, 1 -> 6) && st.matchIndex == Map(42 -> 0, 1 -> 5) =>
+              true
+          },
+          Expect(heartbeat(1, 42, 5, 1)),
+          Reply(AppendEntriesResult(1, success = false)),
+          FishForMsg {
+            case req: AppendEntries if req.entries.size == 1 && req.prevLogIndex == 4 => true
+          }
+        )
+        .run()
+    }
+  }
 
   "Log replication on follower side" should {
 
@@ -84,34 +131,29 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
   "Server.findNewCommitIndex" should {
 
-    def genLogs(n: Int, term: Int): List[LogEntry] = {
-      List.tabulate(n + 10) { i =>
-        if (i != n) {
-          dummyEntry(term - 1, Init)
-        } else {
-          dummyEntry(term, Init)
-        }
-      }
-    }
-
     "find right new commit index" in {
       assertResult(Some(31)) {
-        Server.findNewCommitIndex(20, List(20, 30, 31, 32, 33, 34), genLogs(31, 3), 3)
+        Server.findNewCommitIndex(
+          20,
+          List(20, 30, 31, 32, 33, 34),
+          genDummyLogsUntilNewTerm(4, 42),
+          3
+        )
       }
       assertResult(Some(31)) {
-        Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genLogs(31, 3), 3)
+        Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genDummyLogsUntilNewTerm(4, 42), 3)
       }
     }
 
     "return None if all matchIndex is smaller than commitIndex" in {
       assertResult(None) {
-        Server.findNewCommitIndex(21, List(10, 13, 11, 12, 15), genLogs(31, 3), 3)
+        Server.findNewCommitIndex(21, List(10, 13, 11, 12, 15), genDummyLogsUntilNewTerm(4, 42), 3)
       }
     }
 
     "return None if eligible value has a different term with current term" in {
       assertResult(None) {
-        Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genLogs(31, 3), 4)
+        Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genDummyLogsUntilNewTerm(3, 42), 4)
       }
     }
   }
@@ -313,7 +355,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(heartbeat(term, leaderId)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
+          Expect(
+            Status(checker.getId, term, ServerState.Follower, Some(leaderId), Map(), Map(), 0, 0)
+          )
         )
         .run()
     }
@@ -343,11 +387,22 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(RequestVote(higherTerm, leaderId, 0, 0)),
           Expect(RequestVoteResult(higherTerm, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, higherTerm, ServerState.Follower, None)),
+          Expect(Status(checker.getId, higherTerm, ServerState.Follower, None, Map(), Map(), 0, 0)),
           Tell(heartbeat(higherTerm, leaderId)),
           Expect(AppendEntriesResult(higherTerm, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, higherTerm, ServerState.Follower, Some(leaderId)))
+          Expect(
+            Status(
+              checker.getId,
+              higherTerm,
+              ServerState.Follower,
+              Some(leaderId),
+              Map(),
+              Map(),
+              0,
+              0
+            )
+          )
         )
         .run()
     }
@@ -473,7 +528,9 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(heartbeat(term, leaderId)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
-          Expect(Status(checker.getId, term, ServerState.Follower, Some(leaderId)))
+          Expect(
+            Status(checker.getId, term, ServerState.Follower, Some(leaderId), Map(), Map(), 0, 0)
+          )
         )
         .run()
     }
@@ -573,16 +630,25 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .run()
     }
 
-    "return server status after receive GetStatus request" in {
+    "return initialized leader status after receive GetStatus request" in {
       val checker = new LeaderEndPointChecker()
       checker
         .setActions(
           Tell(GetStatus),
-          Expect(Status(checker.getId, 1, ServerState.Leader, Some(checker.getId)))
+          Expect(
+            Status(
+              checker.getId,
+              1,
+              ServerState.Leader,
+              Some(checker.getId),
+              Map(1 -> 1, checker.getId -> 1),
+              Map(1 -> 0, checker.getId -> 0),
+              0,
+              0
+            )
+          )
         )
         .run()
     }
   }
-
-  // Log compaction
 }

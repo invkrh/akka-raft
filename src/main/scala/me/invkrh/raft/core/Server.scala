@@ -78,16 +78,8 @@ object Server {
     curTerm: Int
   ): Option[Int] = {
     val maj = matchIndexValue.size / 2 + 1 // self in included
-    try {
-      val eligible = matchIndexValue.filter(_ > commitIndex).toList.sortBy(-_).apply(maj - 1)
-      if (logs(eligible).term == curTerm) {
-        Some(eligible)
-      } else {
-        None
-      }
-    } catch {
-      case _: IndexOutOfBoundsException => None
-    }
+    val eligible = matchIndexValue.filter(_ > commitIndex).toList.sortBy(-_).lift(maj - 1)
+    eligible.filter(e => logs(e).term == curTerm)
   }
 }
 
@@ -202,7 +194,7 @@ class Server(
         logInfo(s"Majority is reached ($hint) at term $curTerm")
         cvs match {
           case _: AppendEntriesConversation =>
-            logInfo("Updating leader's state")
+            logInfo("Applying logs on leader")
             Server
               .findNewCommitIndex(commitIndex, matchIndex.values, logs, curTerm)
               .foreach(requestSetCommitIndex)
@@ -220,9 +212,17 @@ class Server(
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
   def adminEndpoint: Receive = {
-    case MembershipRequest => sender ! Membership(members)
-    case GetStatus => sender ! Status(id, curTerm, curState, curLeaderId, logs)
-    // TODO: Add more admin endpoint
+    case GetStatus =>
+      sender ! Status(
+        id,
+        curTerm,
+        curState,
+        curLeaderId,
+        nextIndex,
+        matchIndex,
+        commitIndex,
+        lastApplied
+      )
   }
 
   def startElectionEndpoint: Receive = {
@@ -231,7 +231,7 @@ class Server(
 
   def tickEndPoint: Receive = {
     case Tick =>
-      LeaderMessageHub(curTerm, id, commitIndex, nextIndex, logs)
+      LeaderMessageHub(curTerm, id, commitIndex, nextIndex, logs, members)
         .distributeRPCRequest(tickTime)
         .map(AppendEntriesConversation) pipeTo self
   }
@@ -250,7 +250,7 @@ class Server(
           logs(request.prevLogIndex).term == request.prevLogTerm) {
           val (mergedLogs, lastNewEntryIndex) = Server.syncLogsFromLeader(request, logs)
           logs = mergedLogs
-          if (request.leaderCommit > commitIndex) { // TODO: add test
+          if (request.leaderCommit > commitIndex) {
             logDebug("Updating local commit index")
             requestSetCommitIndex(Math.min(request.leaderCommit, lastNewEntryIndex))
           }
@@ -322,7 +322,6 @@ class Server(
   // Server state conversion
   //////////////////////////////////////////////////////////////////////////////////////////////////
 
-  // TODO: Member Management problem
   override def receive: Receive = // Initial state
     adminEndpoint orElse {
       case Membership(index) =>
@@ -400,7 +399,7 @@ class Server(
     logInfo(s"Election for term $curTerm started, server $id becomes candidate")
     curState = ServerState.Candidate
     become(candidate)
-    CandidateMessageHub(curTerm, id, logs)
+    CandidateMessageHub(curTerm, id, logs, members)
       .distributeRPCRequest(minElectionTime)
       .map(RequestVoteConversation.apply) pipeTo self
     electionTimer.restart()

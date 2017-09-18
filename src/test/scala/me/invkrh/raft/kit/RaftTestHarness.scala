@@ -6,11 +6,12 @@ import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContextExecutor
 
 import akka.actor.ActorSystem
-import akka.testkit.{ImplicitSender, TestKit}
+import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
 import me.invkrh.raft.deploy.remote.RemoteProvider
+import me.invkrh.raft.message.ClientMessage.{Command, Init, LogEntry}
 import me.invkrh.raft.util.{Logging, NetworkUtils}
 
 trait TestHarness extends WordSpecLike with BeforeAndAfterAll with Logging {
@@ -27,6 +28,21 @@ abstract class RaftTestHarness(specName: String, isRemote: Boolean = false)
   implicit val executor: ExecutionContextExecutor = system.dispatcher
   override def afterAll {
     TestKit.shutdownActorSystem(system)
+  }
+
+  private val refHolder = TestProbe().ref
+  def dummyEntry(term: Int, cmd: Command): LogEntry = {
+    LogEntry(term, cmd, refHolder)
+  }
+
+  def genDummyLogsUntilNewTerm(term: Int, newTermIndex: Int): List[LogEntry] = {
+    List.tabulate(newTermIndex + 1) { i =>
+      if (i != newTermIndex) {
+        dummyEntry(term - 1, Init)
+      } else {
+        dummyEntry(term, Init)
+      }
+    }
   }
 }
 
