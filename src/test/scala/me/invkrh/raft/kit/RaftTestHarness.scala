@@ -5,7 +5,7 @@ import java.io.File
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContextExecutor
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, Scheduler}
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
@@ -16,8 +16,7 @@ import me.invkrh.raft.util.{Logging, NetworkUtils}
 
 trait TestHarness extends WordSpecLike with BeforeAndAfterAll with Logging {
   val configFilePath: String = getClass.getResource("/raft.conf").getPath
-  implicit val config: Config =
-    ConfigFactory.parseFile(new File(configFilePath))
+  val config: Config = ConfigFactory.parseFile(new File(configFilePath))
 }
 
 abstract class RaftTestHarness(specName: String, isRemote: Boolean = false)
@@ -26,6 +25,8 @@ abstract class RaftTestHarness(specName: String, isRemote: Boolean = false)
     with TestHarness {
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
+  implicit val scheduler: Scheduler = system.scheduler
+
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }

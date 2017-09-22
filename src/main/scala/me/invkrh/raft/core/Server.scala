@@ -1,6 +1,7 @@
 package me.invkrh.raft.core
 
 import scala.collection.mutable.ArrayBuffer
+import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -9,10 +10,11 @@ import akka.pattern.pipe
 
 import me.invkrh.raft.deploy.raftServerName
 import me.invkrh.raft.exception._
-import me.invkrh.raft.message.{RaftMessage, StartElection, Tick}
+import me.invkrh.raft.message._
 import me.invkrh.raft.message.AdminMessage._
 import me.invkrh.raft.message.ClientMessage._
 import me.invkrh.raft.message.RPCMessage._
+import me.invkrh.raft.message.TimerMessage._
 import me.invkrh.raft.storage.DataStore
 import me.invkrh.raft.util._
 
@@ -92,9 +94,10 @@ class Server(
 ) extends Actor
     with Logging {
 
-  import context._
-  implicit val scheduler: Scheduler = system.scheduler
-  val dataStoreManager: ActorRef = context.actorOf(DataStoreManager.props(dataStore), "dsm")
+  // implicit context variable
+  // there exists an implicit ActorRef for this actor: self
+  implicit val executor: ExecutionContextExecutor = context.dispatcher
+  implicit val scheduler: Scheduler = context.system.scheduler
 
   // Persistent state on all servers
   private var curTerm = 0
@@ -112,9 +115,9 @@ class Server(
   // Additional state
   private implicit var members: Map[Int, ActorRef] = Map()
   private var curState: ServerState.Value = ServerState.Bootstrap
-  // TODO: whether votedFor and curLeaderId are interchangeable
   private var curLeaderId: Option[Int] = None
 
+  private val dataStoreManager = context.actorOf(DataStoreManager.props(dataStore), "dsm")
   private val clientMessageCache = new MessageCache[Command](id)
   private val electionTimer = new RandomizedTimer(minElectionTime, maxElectionTime, StartElection)
   private val heartBeatTimer = new PeriodicTimer(tickTime, Tick)
@@ -387,7 +390,7 @@ class Server(
       }
     }
     curState = ServerState.Follower
-    become(follower)
+    context.become(follower)
     heartBeatTimer.stop()
     electionTimer.restart()
   }
@@ -398,7 +401,7 @@ class Server(
     curLeaderId = None
     logInfo(s"Election for term $curTerm started, server $id becomes candidate")
     curState = ServerState.Candidate
-    become(candidate)
+    context.become(candidate)
     CandidateMessageHub(curTerm, id, logs, members)
       .distributeRPCRequest(minElectionTime)
       .map(RequestVoteConversation.apply) pipeTo self
@@ -417,7 +420,7 @@ class Server(
     }
     logInfo(s"Server $id becomes leader")
     curState = ServerState.Leader
-    become(leader)
+    context.become(leader)
     clientMessageCache.flushTo(self)
     electionTimer.stop()
     heartBeatTimer.restart()

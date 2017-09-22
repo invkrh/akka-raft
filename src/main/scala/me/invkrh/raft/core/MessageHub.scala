@@ -1,7 +1,7 @@
 package me.invkrh.raft.core
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{Duration, FiniteDuration}
 
 import akka.actor.{ActorRef, Scheduler}
 import akka.pattern.{after, ask, AskTimeoutException}
@@ -11,7 +11,6 @@ import me.invkrh.raft.message.ClientMessage._
 import me.invkrh.raft.message.RPCMessage._
 import me.invkrh.raft.util.Logging
 
-// TODO: ADD test
 sealed trait MessageHub extends Logging {
   def term: Int
   def selfId: Int
@@ -19,11 +18,15 @@ sealed trait MessageHub extends Logging {
   def request(followerId: Int): RPCRequest
   def members: Map[Int, ActorRef]
 
-  implicit def ec: ExecutionContext
+  implicit def executor: ExecutionContext
+  implicit def scheduler: Scheduler
 
   // TODO: think of retrying request
-  def retry[T](ft: Future[T], delay: FiniteDuration, retries: Int, retryMsg: String = "")(
-    implicit scheduler: Scheduler
+  def retry[T](
+    ft: Future[T],
+    delay: FiniteDuration,
+    retries: Int,
+    retryMsg: String = ""
   ): Future[T] = {
     ft recoverWith {
       case e if retries > 0 =>
@@ -40,7 +43,7 @@ sealed trait MessageHub extends Logging {
       (followId, ref) <- members.par if followId != selfId
     } yield {
       val req = request(followId)
-      (ref ? req) map {
+      retry(ref ? req, Duration.Zero, 0) map {
         case res: RPCResponse => Exchange(req, res, followId)
       } recover {
         case _: AskTimeoutException =>
@@ -56,7 +59,7 @@ case class CandidateMessageHub(
   selfId: Int,
   logs: List[LogEntry],
   members: Map[Int, ActorRef]
-)(implicit val ec: ExecutionContext)
+)(implicit val scheduler: Scheduler, val executor: ExecutionContext)
     extends MessageHub {
   def request(followerId: Int): RPCRequest = {
     RequestVote(
@@ -75,7 +78,7 @@ case class LeaderMessageHub(
   nextIndex: Map[Int, Int],
   logs: List[LogEntry],
   members: Map[Int, ActorRef]
-)(implicit val ec: ExecutionContext)
+)(implicit val scheduler: Scheduler, val executor: ExecutionContext)
     extends MessageHub {
   def request(followerId: Int): RPCRequest = {
     val lastLogIndex: Int = logs.size - 1

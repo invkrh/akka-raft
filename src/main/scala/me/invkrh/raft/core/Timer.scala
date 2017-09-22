@@ -1,13 +1,13 @@
 package me.invkrh.raft.core
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Random
 
 import akka.actor.{ActorRef, Cancellable, Scheduler}
 
-import me.invkrh.raft.message.TimerMessage
+import me.invkrh.raft.message.RaftMessage
 
 trait Timer {
   protected var cancellable: Cancellable = _
@@ -24,8 +24,9 @@ trait Timer {
   }
 }
 
-class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: TimerMessage)(
+class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: RaftMessage)(
   implicit scheduler: Scheduler,
+  executor: ExecutionContext,
   target: ActorRef
 ) extends Timer {
   def start(): Unit = {
@@ -35,11 +36,11 @@ class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: TimerMess
   }
 }
 
-class PeriodicTimer(
-  duration: FiniteDuration,
-  event: TimerMessage
-)(implicit scheduler: Scheduler, target: ActorRef)
-    extends Timer {
+class PeriodicTimer(duration: FiniteDuration, event: RaftMessage)(
+  implicit scheduler: Scheduler,
+  executor: ExecutionContext,
+  target: ActorRef
+) extends Timer {
   def start(): Unit = {
     require(target != null, "Timer target can not be null")
     cancellable = scheduler.schedule(Duration.Zero, duration, target, event)

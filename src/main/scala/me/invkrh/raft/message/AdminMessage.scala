@@ -5,9 +5,8 @@ import akka.actor.ActorRef
 import me.invkrh.raft.core.ServerState
 
 object AdminMessage {
-  case class Membership(memberDict: Map[Int, ActorRef]) extends RaftMessage
-
   case object GetStatus extends RaftMessage
+  case class Membership(memberDict: Map[Int, ActorRef]) extends RaftMessage
   case class Status(
     serverID: Int,
     term: Int,

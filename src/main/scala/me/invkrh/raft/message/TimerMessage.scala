@@ -1,5 +1,6 @@
 package me.invkrh.raft.message
 
-sealed trait TimerMessage
-case object Tick extends TimerMessage
-case object StartElection extends TimerMessage
+object TimerMessage {
+  case object Tick extends RaftMessage
+  case object StartElection extends RaftMessage
+}
