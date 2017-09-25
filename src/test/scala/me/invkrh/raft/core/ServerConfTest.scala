@@ -15,13 +15,14 @@ class ServerConfTest extends FlatSpecLike {
         |election.timeout.min.ms = 150
         |election.timeout.max.ms = 150
         |heartbeat.interval.ms = 100
+        |rpc.retries = 1
         |datastore.type = memory
       """.stripMargin
     val config = ConfigFactory.parseString(confStr)
 
     val result = ServerConf(config)
     val expected =
-      ServerConf(150 millis, 150 millis, 100 millis, DataStore(config.getConfig("datastore")))
+      ServerConf(150 millis, 150 millis, 100 millis, 1, DataStore(config.getConfig("datastore")))
 
     assertResult(expected) { result }
   }

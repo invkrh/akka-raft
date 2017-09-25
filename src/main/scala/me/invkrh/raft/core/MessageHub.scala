@@ -1,7 +1,7 @@
 package me.invkrh.raft.core
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.duration.{FiniteDuration, _}
 
 import akka.actor.{ActorRef, Scheduler}
 import akka.pattern.{after, ask, AskTimeoutException}
@@ -21,33 +21,29 @@ sealed trait MessageHub extends Logging {
   implicit def executor: ExecutionContext
   implicit def scheduler: Scheduler
 
-  // TODO: think of retrying request
-  def retry[T](
-    ft: Future[T],
-    delay: FiniteDuration,
-    retries: Int,
-    retryMsg: String = ""
-  ): Future[T] = {
+  def retry[T](ft: => Future[T], delay: FiniteDuration, retries: Int): Future[T] = {
     ft recoverWith {
       case e if retries > 0 =>
-        logWarn(retryMsg + " current error: " + e)
-        after(delay, scheduler)(retry(ft, delay, retries - 1, retryMsg))
+        logWarn(s"Retrying [$retries] on error: $e")
+        after(delay, scheduler)(retry(ft, delay, retries - 1))
     }
   }
 
-  def distributeRPCRequest(timeoutDuration: FiniteDuration): Future[Iterable[Exchange]] = {
+  def distributeRPCRequest(
+    maxResponseTime: FiniteDuration,
+    retries: Int = 1
+  ): Future[Iterable[Exchange]] = {
     // tighten timeout duration
     implicit val timeout: Timeout =
-      Timeout((timeoutDuration.toMillis * 0.8).toLong, timeoutDuration.unit)
+      Timeout((maxResponseTime.toMillis / (retries + 1) * 0.8).toLong, MILLISECONDS)
     val exchanges = for {
       (followId, ref) <- members.par if followId != selfId
     } yield {
       val req = request(followId)
-      retry(ref ? req, Duration.Zero, 0) map {
+      retry(ref ? req, Duration.Zero, retries) map {
         case res: RPCResponse => Exchange(req, res, followId)
       } recover {
-        case _: AskTimeoutException =>
-          Exchange(req, RequestTimeout(term), followId)
+        case _: AskTimeoutException => Exchange(req, RequestTimeout(term), followId)
       }
     }
     Future.sequence(exchanges.seq)

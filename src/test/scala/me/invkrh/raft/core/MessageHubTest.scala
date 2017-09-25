@@ -22,9 +22,11 @@ class MessageHubTest extends RaftTestHarness("MessageHubTestSystem") {
     val probe = TestProbe()
     val membership = Map(followerId -> probe.ref)
 
-    "exchange messages with other members" in {
+    "exchange messages with other members with retries" in {
       val ft =
-        CandidateMessageHub(term, candidateId, logs, membership).distributeRPCRequest(5 seconds)
+        CandidateMessageHub(term, candidateId, logs, membership).distributeRPCRequest(1 seconds, 3)
+      probe.expectMsg(request)
+      probe.expectMsg(request)
       probe.expectMsg(request)
       probe.reply(response)
       assertResult(Iterable(Exchange(request, response, followerId))) {
@@ -54,9 +56,11 @@ class MessageHubTest extends RaftTestHarness("MessageHubTestSystem") {
     val probe = TestProbe()
     val membership = Map(followerId -> probe.ref)
 
-    "exchange messages with other members" in {
+    "exchange messages with other members with retries" in {
       val ft = LeaderMessageHub(term, leaderId, leaderCommitIndex, nextIndex, logs, membership)
-        .distributeRPCRequest(5 seconds)
+        .distributeRPCRequest(1 seconds, 3)
+      probe.expectMsg(request)
+      probe.expectMsg(request)
       probe.expectMsg(request)
       probe.reply(response)
       assertResult(Iterable(Exchange(request, response, followerId))) {

@@ -39,7 +39,8 @@ class ServerLauncherTest extends RaftTestHarness("ServerLauncherTest") {
 
     "throw UnexpectedSenderException if ServerId is not sent from initializer" in {
       val probe = TestProbe()
-      val supervisor: ActorRef = system.actorOf(Props(new ExceptionDetector(s"ExDet", probe.ref)))
+      val supervisor: ActorRef =
+        system.actorOf(Props(new ExceptionDetector(s"ExceptionDetector", probe.ref)))
       supervisor ! ServerLauncher.props(probe.ref, serverConf)
       val launcherRef = expectMsgType[ActorRef]
       probe.expectMsg(ServerIdRequest)

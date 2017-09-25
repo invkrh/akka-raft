@@ -7,11 +7,11 @@ import me.invkrh.raft.exception.{InvalidArgumentsException, MalformedAddressExce
 import me.invkrh.raft.kit.TestHarness
 import me.invkrh.raft.util.NetworkUtils.CanonicalAddress
 
-class Launcher(implicit val config: Config) extends ServerLauncherRemote with ConfigHolder
+class Launcher(val config: Config) extends ServerLauncherRemote with ConfigHolder
 
 class ServerLauncherRemoteTest extends TestHarness {
   "ServerLauncherRemote" should {
-    val launch = new Launcher()
+    val launch = new Launcher(this.config)
     "parse arguments of main function using flag" in {
       launch.parse(List("--host", "localhost", "--port", "1234", "--init", "localhost:8080"))
       assertResult("localhost") {

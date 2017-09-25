@@ -1,6 +1,6 @@
 package me.invkrh.raft.core
 
-import akka.actor.{Actor, ActorSystem, Props}
+import akka.actor.Actor
 
 case class Holder(coll: List[Int])
 

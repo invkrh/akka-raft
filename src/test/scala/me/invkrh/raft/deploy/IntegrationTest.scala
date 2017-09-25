@@ -22,7 +22,7 @@ class IntegrationTest extends TestHarness { self =>
       /**
        * Start initiator
        */
-      val initiator = new Initiator()
+      val initiator = new Initiator(this.config)
       initiator.main(Array())
       Thread.sleep(5000) // Wait for initiator to start
 
@@ -31,7 +31,7 @@ class IntegrationTest extends TestHarness { self =>
        */
       val serverNum = config.getInt("cluster.quorum") * 2 - 1
       val launchers = 1 to serverNum map { i =>
-        new Launcher()
+        new Launcher(this.config)
       }
 
       launchers.zipWithIndex foreach {

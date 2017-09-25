@@ -19,7 +19,7 @@ class ServerClusterTest extends RaftTestHarness("ClusterSpec") { self =>
       val num = 5
       val memberDict = List
         .tabulate(num) { i =>
-          val ref = Server.run(i, 1000 millis, 1500 millis, 100 millis, MemoryStore(), s"svr-$i")
+          val ref = Server.run(i, 1000 millis, 1500 millis, 100 millis, 0, MemoryStore(), s"svr-$i")
           i -> ref
         }
         .toMap

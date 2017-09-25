@@ -220,14 +220,17 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
     "throw exception when election time is shorter than heartbeat interval" in {
       intercept[HeartbeatIntervalException] {
         val server =
-          system.actorOf(Server.props(0, 100 millis, 100 millis, 150 millis, MemoryStore()), "svr")
+          system.actorOf(
+            Server.props(0, 100 millis, 100 millis, 150 millis, 0, MemoryStore()),
+            "svr"
+          )
         server ! PoisonPill
       }
     }
 
     "start if none of the bootstrap members are resolved" in {
       val server =
-        system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, new MemoryStore()))
+        system.actorOf(Server.props(0, 150 millis, 150 millis, 100 millis, 0, MemoryStore()))
       expectNoMsg()
       server ! PoisonPill
     }

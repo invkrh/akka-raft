@@ -74,7 +74,10 @@ sealed trait EndpointChecker {
       )
     val server: ActorRef = {
       val pb = TestProbe()
-      supervisor.tell(Server.props(id, electionTime, electionTime, tickTime, memoryStore), pb.ref)
+      supervisor.tell(
+        Server.props(id, electionTime, electionTime, tickTime, 0, memoryStore),
+        pb.ref
+      )
       pb.expectMsgType[ActorRef]
     }
     val dict = probes.zipWithIndex.map {

@@ -6,11 +6,11 @@ import me.invkrh.raft.deploy.ConfigHolder
 import me.invkrh.raft.exception.InvalidArgumentsException
 import me.invkrh.raft.kit.TestHarness
 
-class Initiator(implicit val config: Config) extends ClusterInitiatorRemote with ConfigHolder
+class Initiator(val config: Config) extends ClusterInitiatorRemote with ConfigHolder
 
 class ClusterInitiatorRemoteTest extends TestHarness {
   "ClusterInitiatorRemote" should {
-    val init = new Initiator()
+    val init = new Initiator(this.config)
     "parse arguments of main function using flag" in {
       init.parse(List("--host", "localhost", "--port", "1234"))
       assertResult("localhost") {

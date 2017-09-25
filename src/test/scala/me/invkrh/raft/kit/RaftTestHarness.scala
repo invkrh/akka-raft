@@ -5,8 +5,8 @@ import java.io.File
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContextExecutor
 
-import akka.actor.{ActorSystem, Scheduler}
-import akka.testkit.{ImplicitSender, TestKit, TestProbe}
+import akka.actor.{Actor, ActorSystem, Scheduler}
+import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.scalatest.{BeforeAndAfterAll, WordSpecLike}
 
@@ -31,9 +31,8 @@ abstract class RaftTestHarness(specName: String, isRemote: Boolean = false)
     TestKit.shutdownActorSystem(system)
   }
 
-  private val refHolder = TestProbe().ref
   def dummyEntry(term: Int, cmd: Command): LogEntry = {
-    LogEntry(term, cmd, refHolder)
+    LogEntry(term, cmd, Actor.noSender)
   }
 
   def genDummyLogsUntilNewTerm(term: Int, newTermIndex: Int): List[LogEntry] = {

@@ -24,11 +24,12 @@ trait Timer {
   }
 }
 
-class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: RaftMessage)(
-  implicit scheduler: Scheduler,
-  executor: ExecutionContext,
-  target: ActorRef
-) extends Timer {
+class RandomizedTimer(
+  min: FiniteDuration,
+  max: FiniteDuration,
+  event: RaftMessage
+)(implicit scheduler: Scheduler, executor: ExecutionContext, target: ActorRef)
+    extends Timer {
   def start(): Unit = {
     require(target != null, "Timer target can not be null")
     val rd = min.toMillis + Random.nextInt((max.toMillis - min.toMillis + 1).toInt)
@@ -36,11 +37,11 @@ class RandomizedTimer(min: FiniteDuration, max: FiniteDuration, event: RaftMessa
   }
 }
 
-class PeriodicTimer(duration: FiniteDuration, event: RaftMessage)(
-  implicit scheduler: Scheduler,
-  executor: ExecutionContext,
-  target: ActorRef
-) extends Timer {
+class PeriodicTimer(
+  duration: FiniteDuration,
+  event: RaftMessage
+)(implicit scheduler: Scheduler, executor: ExecutionContext, target: ActorRef)
+    extends Timer {
   def start(): Unit = {
     require(target != null, "Timer target can not be null")
     cancellable = scheduler.schedule(Duration.Zero, duration, target, event)

@@ -24,16 +24,24 @@ object Server {
     minElectionTime: FiniteDuration,
     maxElectionTime: FiniteDuration,
     tickTime: FiniteDuration,
+    rcpRetries: Int,
     dataStore: DataStore
   ): Props = {
     if (minElectionTime <= tickTime) {
       throw HeartbeatIntervalException()
     }
-    Props(new Server(id, minElectionTime, maxElectionTime, tickTime, dataStore))
+    Props(new Server(id, minElectionTime, maxElectionTime, tickTime, rcpRetries, dataStore))
   }
 
   def props(id: Int, conf: ServerConf): Props = {
-    props(id, conf.minElectionTime, conf.maxElectionTime, conf.tickTime, conf.dataStore)
+    props(
+      id,
+      conf.minElectionTime,
+      conf.maxElectionTime,
+      conf.tickTime,
+      conf.rpcRetries,
+      conf.dataStore
+    )
   }
 
   def run(
@@ -41,10 +49,14 @@ object Server {
     minElectionTime: FiniteDuration,
     maxElectionTime: FiniteDuration,
     tickTime: FiniteDuration,
+    rpcRetries: Int,
     dataStore: DataStore,
     name: String
   )(implicit system: ActorSystem): ActorRef = {
-    system.actorOf(props(id, minElectionTime, maxElectionTime, tickTime, dataStore), name)
+    system.actorOf(
+      props(id, minElectionTime, maxElectionTime, tickTime, rpcRetries, dataStore),
+      name
+    )
   }
 
   def run(id: Int, serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
@@ -90,6 +102,7 @@ class Server(
   minElectionTime: FiniteDuration,
   maxElectionTime: FiniteDuration,
   tickTime: FiniteDuration,
+  rcpRetries: Int,
   dataStore: DataStore
 ) extends Actor
     with Logging {
@@ -175,7 +188,7 @@ class Server(
             logDebug(s"Vote granted by server $fid at term $term (address: $ref)")
             validateExchange.append(ex)
 
-          // Common Response
+          // Timeout Response to both of candidate and leader
           case _: RequestTimeout =>
             logInfo(s"Request $request is time out when connecting server $fid (address: $ref)")
           case _: RPCResponse =>
@@ -235,7 +248,7 @@ class Server(
   def tickEndPoint: Receive = {
     case Tick =>
       LeaderMessageHub(curTerm, id, commitIndex, nextIndex, logs, members)
-        .distributeRPCRequest(tickTime)
+        .distributeRPCRequest(tickTime, rcpRetries)
         .map(AppendEntriesConversation) pipeTo self
   }
 
@@ -403,7 +416,7 @@ class Server(
     curState = ServerState.Candidate
     context.become(candidate)
     CandidateMessageHub(curTerm, id, logs, members)
-      .distributeRPCRequest(minElectionTime)
+      .distributeRPCRequest(minElectionTime, rcpRetries)
       .map(RequestVoteConversation.apply) pipeTo self
     electionTimer.restart()
   }
