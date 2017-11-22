@@ -21,8 +21,7 @@ object DataStore {
   }
 }
 
-case class MemoryStore(cache: mutable.HashMap[Any, Any] = new mutable.HashMap())
-    extends DataStore {
+case class MemoryStore(cache: mutable.HashMap[Any, Any] = new mutable.HashMap()) extends DataStore {
 
   override def applyCommand(cmd: Command): CommandResult = {
     try {

@@ -16,12 +16,11 @@ import me.invkrh.raft.storage.MemoryStore
 class ServerTest extends RaftTestHarness("SeverSpec") { self =>
 
   def heartbeat(
-    term: Int,
-    leaderId: Int,
-    prevLogIndex: Int = 0,
-    prevLogTerm: Int = 0,
-    leaderCommit: Int = 0
-  ): AppendEntries =
+      term: Int,
+      leaderId: Int,
+      prevLogIndex: Int = 0,
+      prevLogTerm: Int = 0,
+      leaderCommit: Int = 0): AppendEntries =
     AppendEntries(term, leaderId, prevLogIndex, prevLogTerm, Nil, leaderCommit)
 
   //////////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,10 +42,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
               Map(1 -> 1, 42 -> 1),
               Map(1 -> 0, 42 -> 0),
               0,
-              0
-            )
-          )
-        )
+              0)))
         .run()
     }
 
@@ -68,8 +64,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Reply(AppendEntriesResult(1, success = false)),
           FishForMsg {
             case req: AppendEntries if req.entries.size == 1 && req.prevLogIndex == 4 => true
-          }
-        )
+          })
         .run()
     }
   }
@@ -77,12 +72,11 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
   "Log replication on follower side" should {
 
     def followerLogReplicationCheck(
-      term: Int,
-      prevIndex: Int,
-      prevTerm: Int,
-      leaderCommit: Int,
-      isAccept: Boolean
-    ): MemoryStore = {
+        term: Int,
+        prevIndex: Int,
+        prevTerm: Int,
+        leaderCommit: Int,
+        isAccept: Boolean): MemoryStore = {
       val checker = new FollowerEndPointChecker()
       val leaderId = 1
       checker
@@ -96,11 +90,8 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
               prevIndex,
               prevTerm,
               List(dummyEntry(1, SET("x", 1))),
-              leaderCommit
-            )
-          ),
-          Expect(AppendEntriesResult(term, success = isAccept))
-        )
+              leaderCommit)),
+          Expect(AppendEntriesResult(term, success = isAccept)))
         .run()
       checker.memoryStore
     }
@@ -137,8 +128,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           20,
           List(20, 30, 31, 32, 33, 34),
           genDummyLogsUntilNewTerm(4, 42),
-          3
-        )
+          3)
       }
       assertResult(Some(31)) {
         Server.findNewCommitIndex(21, List(20, 23, 31, 32, 33), genDummyLogsUntilNewTerm(4, 42), 3)
@@ -170,8 +160,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       dummyEntry(0, SET("x", 2)),
       dummyEntry(0, SET("x", 3)),
       dummyEntry(0, SET("x", 4)),
-      dummyEntry(0, SET("x", 5))
-    )
+      dummyEntry(0, SET("x", 5)))
 
     "merge request logs and local logs" in {
       val request = req(3, dummyEntry(0, SET("x", 4)), dummyEntry(0, SET("x", 5)))
@@ -222,8 +211,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         val server =
           system.actorOf(
             Server.props(0, 100 millis, 100 millis, 150 millis, 0, MemoryStore()),
-            "svr"
-          )
+            "svr")
         server ! PoisonPill
       }
     }
@@ -246,8 +234,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(SET("x", 1)), // reuse leader ref as client ref
           Tell(SET("y", 2)),
           FishForMsg { case _: Command => true },
-          FishForMsg { case _: Command => true }
-        )
+          FishForMsg { case _: Command => true })
         .run()
     }
 
@@ -279,8 +266,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(RequestVote(1, 2, 0, 0)),
           Expect(RequestVoteResult(1, success = false)),
           Tell(RequestVote(1, 1, 0, 0)),
-          Expect(RequestVoteResult(1, success = true))
-        )
+          Expect(RequestVoteResult(1, success = true)))
         .run()
     }
 
@@ -302,8 +288,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(RequestVote(1, 0, 0, 0)),
           Expect(RequestVoteResult(1, success = true)),
           Reply(RequestVote(1, 1, 0, 0)),
-          Expect(RequestVoteResult(1, success = false))
-        )
+          Expect(RequestVoteResult(1, success = false)))
         .run()
     }
 
@@ -314,8 +299,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(RequestVote(1, 0, 0, 0)),
           Expect(RequestVoteResult(1, success = true)),
           Tell(RequestVote(10, 1, 0, 0)),
-          Expect(RequestVoteResult(10, success = true))
-        )
+          Expect(RequestVoteResult(10, success = true)))
         .run()
     }
 
@@ -334,18 +318,14 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setElectionTime(electionTime)
         .setTickTime(tickTime)
-        .setActions(
-          Within(
-            tickTime * heartbeatNum + electionTime,
-            tickTime * heartbeatNum + electionTime * 2,
-            Rep(
-              heartbeatNum,
-              Delay(tickTime, Tell(heartbeat(0, 1))),
-              Expect(AppendEntriesResult(0, success = true))
-            ),
-            Expect(RequestVote(1, checker.getId, 0, 0))
-          )
-        )
+        .setActions(Within(
+          tickTime * heartbeatNum + electionTime,
+          tickTime * heartbeatNum + electionTime * 2,
+          Rep(
+            heartbeatNum,
+            Delay(tickTime, Tell(heartbeat(0, 1))),
+            Expect(AppendEntriesResult(0, success = true))),
+          Expect(RequestVote(1, checker.getId, 0, 0))))
         .run()
     }
 
@@ -359,9 +339,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
           Expect(
-            Status(checker.getId, term, ServerState.Follower, Some(leaderId), Map(), Map(), 0, 0)
-          )
-        )
+            Status(checker.getId, term, ServerState.Follower, Some(leaderId), Map(), Map(), 0, 0)))
         .run()
     }
 
@@ -373,8 +351,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(heartbeat(term, leaderId)),
           Expect(AppendEntriesResult(term, success = true)),
           Tell(heartbeat(term, leaderId + 1)),
-          FishForMsg { case _: MultiLeaderException => true }
-        )
+          FishForMsg { case _: MultiLeaderException => true })
         .run()
     }
   }
@@ -403,10 +380,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
               Map(),
               Map(),
               0,
-              0
-            )
-          )
-        )
+              0)))
         .run()
     }
 
@@ -418,8 +392,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Within(electionTimeout, electionTimeout, Expect(RequestVote(2, checker.getId, 0, 0))),
           Within(electionTimeout, electionTimeout, Expect(RequestVote(3, checker.getId, 0, 0))),
-          Within(electionTimeout, electionTimeout, Expect(RequestVote(4, checker.getId, 0, 0)))
-        )
+          Within(electionTimeout, electionTimeout, Expect(RequestVote(4, checker.getId, 0, 0))))
         .run()
     }
 
@@ -428,8 +401,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setActions(
           Reply(RequestVoteResult(1, success = false)),
-          Expect(RequestVote(2, checker.getId, 0, 0))
-        )
+          Expect(RequestVote(2, checker.getId, 0, 0)))
         .run()
     }
 
@@ -439,8 +411,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Reply(RequestVoteResult(2, success = false)), // step down
           Tell(RequestVote(10, 100, 0, 0)),
-          Expect(RequestVoteResult(10, success = true))
-        )
+          Expect(RequestVoteResult(10, success = true)))
         .run()
     }
 
@@ -450,8 +421,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setProbeNum(5)
         .setActions(
           MajorReply(RequestVoteResult(1, success = true)),
-          Expect(heartbeat(1, checker.getId))
-        )
+          Expect(heartbeat(1, checker.getId)))
         .run()
     }
 
@@ -462,10 +432,8 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           MinorReply(
             RequestVoteResult(1, success = true),
-            Some(RequestVoteResult(1, success = false))
-          ),
-          Expect(RequestVote(2, checker.getId, 0, 0))
-        )
+            Some(RequestVoteResult(1, success = false))),
+          Expect(RequestVote(2, checker.getId, 0, 0)))
         .run()
     }
 
@@ -476,8 +444,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setProbeNum(5)
         .setActions(
           Reply(RequestVoteResult(2, success = false)),
-          Expect(RequestVote(3, checker.getId, 0, 0))
-        )
+          Expect(RequestVote(3, checker.getId, 0, 0)))
         .run()
     }
 
@@ -487,8 +454,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(RequestVote(2, 1, 0, 0)),
           Expect(RequestVoteResult(2, success = true)),
           Tell(heartbeat(2, 1)),
-          Expect(AppendEntriesResult(2, success = true))
-        )
+          Expect(AppendEntriesResult(2, success = true)))
         .run()
     }
 
@@ -499,8 +465,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(heartbeat(2, 1)),
           Expect(AppendEntriesResult(2, success = true)),
           Tell(heartbeat(2, 1)),
-          Expect(AppendEntriesResult(2, success = true))
-        )
+          Expect(AppendEntriesResult(2, success = true)))
         .run()
     }
 
@@ -510,8 +475,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Tell(heartbeat(1, 0)),
           Expect(AppendEntriesResult(1, success = true)),
-          Expect(RequestVote(2, checker.getId, 0, 0))
-        )
+          Expect(RequestVote(2, checker.getId, 0, 0)))
         .run()
     }
 
@@ -532,9 +496,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Expect(AppendEntriesResult(term, success = true)),
           Tell(GetStatus),
           Expect(
-            Status(checker.getId, term, ServerState.Follower, Some(leaderId), Map(), Map(), 0, 0)
-          )
-        )
+            Status(checker.getId, term, ServerState.Follower, Some(leaderId), Map(), Map(), 0, 0)))
         .run()
     }
   }
@@ -546,8 +508,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           Reply(AppendEntriesResult(1, success = true)),
           Tell(heartbeat(1, 2)),
-          FishForMsg { case _: MultiLeaderException => true }
-        )
+          FishForMsg { case _: MultiLeaderException => true })
         .run()
     }
 
@@ -557,19 +518,15 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
       checker
         .setTickTime(tickTime)
         .setElectionTime(tickTime * 2)
-        .setActions(
-          Rep(
-            3,
-            Within(
-              tickTime,
-              tickTime * 2,
-              Reply(AppendEntriesResult(1, success = true)),
-              Expect(heartbeat(1, checker.getId)),
-              Reply(AppendEntriesResult(1, success = true)),
-              Expect(heartbeat(1, checker.getId))
-            )
-          )
-        )
+        .setActions(Rep(
+          3,
+          Within(
+            tickTime,
+            tickTime * 2,
+            Reply(AppendEntriesResult(1, success = true)),
+            Expect(heartbeat(1, checker.getId)),
+            Reply(AppendEntriesResult(1, success = true)),
+            Expect(heartbeat(1, checker.getId)))))
         .run()
     }
 
@@ -581,8 +538,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Tell(RequestVote(term, 1, 0, 0)),
           Expect(RequestVoteResult(term, success = true)),
           Tell(heartbeat(term, 1)),
-          Expect(AppendEntriesResult(term, success = true))
-        )
+          Expect(AppendEntriesResult(term, success = true)))
         .run()
     }
 
@@ -593,8 +549,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setProbeNum(5)
         .setActions(
           Reply(AppendEntriesResult(2, success = false)),
-          Expect(RequestVote(3, checker.getId, 0, 0))
-        )
+          Expect(RequestVote(3, checker.getId, 0, 0)))
         .run()
     }
 
@@ -605,16 +560,13 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
         .setActions(
           MajorReply(
             AppendEntriesResult(1, success = false),
-            Some(AppendEntriesResult(1, success = true))
-          ),
+            Some(AppendEntriesResult(1, success = true))),
           Expect(heartbeat(1, checker.getId)),
           MajorReply(
             AppendEntriesResult(1, success = false),
-            Some(AppendEntriesResult(1, success = true))
-          ),
+            Some(AppendEntriesResult(1, success = true))),
           Expect(heartbeat(1, checker.getId)),
-          Reply(AppendEntriesResult(1, success = true))
-        )
+          Reply(AppendEntriesResult(1, success = true)))
         .run()
     }
 
@@ -628,8 +580,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
           Expect(heartbeat(1, checker.getId)),
           MajorReply(AppendEntriesResult(1, success = true)),
           Expect(heartbeat(1, checker.getId)),
-          Reply(AppendEntriesResult(1, success = true))
-        )
+          Reply(AppendEntriesResult(1, success = true)))
         .run()
     }
 
@@ -647,10 +598,7 @@ class ServerTest extends RaftTestHarness("SeverSpec") { self =>
               Map(1 -> 1, checker.getId -> 1),
               Map(1 -> 0, checker.getId -> 0),
               0,
-              0
-            )
-          )
-        )
+              0)))
         .run()
     }
   }

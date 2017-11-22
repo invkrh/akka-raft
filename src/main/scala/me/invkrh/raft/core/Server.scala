@@ -20,13 +20,12 @@ import me.invkrh.raft.util._
 
 object Server {
   def props(
-    id: Int,
-    minElectionTime: FiniteDuration,
-    maxElectionTime: FiniteDuration,
-    tickTime: FiniteDuration,
-    rcpRetries: Int,
-    dataStore: DataStore
-  ): Props = {
+      id: Int,
+      minElectionTime: FiniteDuration,
+      maxElectionTime: FiniteDuration,
+      tickTime: FiniteDuration,
+      rcpRetries: Int,
+      dataStore: DataStore): Props = {
     if (minElectionTime <= tickTime) {
       throw HeartbeatIntervalException()
     }
@@ -40,23 +39,20 @@ object Server {
       conf.maxElectionTime,
       conf.tickTime,
       conf.rpcRetries,
-      conf.dataStore
-    )
+      conf.dataStore)
   }
 
   def run(
-    id: Int,
-    minElectionTime: FiniteDuration,
-    maxElectionTime: FiniteDuration,
-    tickTime: FiniteDuration,
-    rpcRetries: Int,
-    dataStore: DataStore,
-    name: String
-  )(implicit system: ActorSystem): ActorRef = {
+      id: Int,
+      minElectionTime: FiniteDuration,
+      maxElectionTime: FiniteDuration,
+      tickTime: FiniteDuration,
+      rpcRetries: Int,
+      dataStore: DataStore,
+      name: String)(implicit system: ActorSystem): ActorRef = {
     system.actorOf(
       props(id, minElectionTime, maxElectionTime, tickTime, rpcRetries, dataStore),
-      name
-    )
+      name)
   }
 
   def run(id: Int, serverConf: ServerConf)(implicit system: ActorSystem): ActorRef = {
@@ -86,11 +82,10 @@ object Server {
   }
 
   def findNewCommitIndex(
-    commitIndex: Int,
-    matchIndexValue: Iterable[Int],
-    logs: List[LogEntry],
-    curTerm: Int
-  ): Option[Int] = {
+      commitIndex: Int,
+      matchIndexValue: Iterable[Int],
+      logs: List[LogEntry],
+      curTerm: Int): Option[Int] = {
     val maj = matchIndexValue.size / 2 + 1 // self in included
     val eligible = matchIndexValue.filter(_ > commitIndex).toList.sortBy(-_).lift(maj - 1)
     eligible.filter(e => logs(e).term == curTerm)
@@ -98,14 +93,14 @@ object Server {
 }
 
 class Server(
-  val id: Int,
-  minElectionTime: FiniteDuration,
-  maxElectionTime: FiniteDuration,
-  tickTime: FiniteDuration,
-  rcpRetries: Int,
-  dataStore: DataStore
-) extends Actor
-    with Logging {
+    val id: Int,
+    minElectionTime: FiniteDuration,
+    maxElectionTime: FiniteDuration,
+    tickTime: FiniteDuration,
+    rcpRetries: Int,
+    dataStore: DataStore)
+  extends Actor
+  with Logging {
 
   // implicit context variable
   // there exists an implicit ActorRef for this actor: self
@@ -153,8 +148,7 @@ class Server(
       dataStoreManager !
         ApplyLogsRequest(
           logs.slice(lastApplied + 1, commitIndex + 1), // end is exclusive
-          commitIndex
-        )
+          commitIndex)
     }
   }
 
@@ -237,8 +231,7 @@ class Server(
         nextIndex,
         matchIndex,
         commitIndex,
-        lastApplied
-      )
+        lastApplied)
   }
 
   def startElectionEndpoint: Receive = {

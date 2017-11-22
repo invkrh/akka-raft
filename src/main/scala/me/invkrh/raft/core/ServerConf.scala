@@ -8,12 +8,11 @@ import com.typesafe.config.Config
 import me.invkrh.raft.storage.DataStore
 
 case class ServerConf(
-  minElectionTime: FiniteDuration,
-  maxElectionTime: FiniteDuration,
-  tickTime: FiniteDuration,
-  rpcRetries: Int,
-  dataStore: DataStore
-)
+    minElectionTime: FiniteDuration,
+    maxElectionTime: FiniteDuration,
+    tickTime: FiniteDuration,
+    rpcRetries: Int,
+    dataStore: DataStore)
 
 object ServerConf {
   def apply(config: Config): ServerConf = {

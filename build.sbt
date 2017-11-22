@@ -27,7 +27,6 @@ libraryDependencies ++=
     "com.typesafe.akka" %% "akka-actor" % "2.4.17",
     "com.typesafe.akka" %% "akka-remote" % "2.4.17",
     "com.typesafe.akka" %% "akka-testkit" % "2.4.17" % "test",
-    "org.scalatest" %% "scalatest" % "3.0.1" % "test"
-  )
+    "org.scalatest" %% "scalatest" % "3.0.1" % "test")
 
 scalafmtVersion := "1.0.0"

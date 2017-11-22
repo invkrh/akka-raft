@@ -5,15 +5,15 @@ import me.invkrh.raft.message.ClientMessage.LogEntry
 object RPCMessage {
   sealed trait RPCRequest extends RaftMessage
   case class AppendEntries(
-    term: Int,
-    leaderId: Int,
-    prevLogIndex: Int,
-    prevLogTerm: Int,
-    entries: List[LogEntry],
-    leaderCommit: Int
-  ) extends RPCRequest
+      term: Int,
+      leaderId: Int,
+      prevLogIndex: Int,
+      prevLogTerm: Int,
+      entries: List[LogEntry],
+      leaderCommit: Int)
+    extends RPCRequest
   case class RequestVote(term: Int, candidateId: Int, lastLogIndex: Int, lastLogTerm: Int)
-      extends RPCRequest
+    extends RPCRequest
 
   sealed trait RPCResponse extends RaftMessage {
     def term: Int

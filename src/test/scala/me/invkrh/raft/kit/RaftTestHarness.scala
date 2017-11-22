@@ -20,9 +20,9 @@ trait TestHarness extends WordSpecLike with BeforeAndAfterAll with Logging {
 }
 
 abstract class RaftTestHarness(specName: String, isRemote: Boolean = false)
-    extends TestKit(RaftTestHarness.getSystem(specName, isRemote))
-    with ImplicitSender
-    with TestHarness {
+  extends TestKit(RaftTestHarness.getSystem(specName, isRemote))
+  with ImplicitSender
+  with TestHarness {
 
   implicit val executor: ExecutionContextExecutor = system.dispatcher
   implicit val scheduler: Scheduler = system.scheduler

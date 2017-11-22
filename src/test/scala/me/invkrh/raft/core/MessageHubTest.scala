@@ -50,8 +50,7 @@ class MessageHubTest extends RaftTestHarness("MessageHubTestSystem") {
       followerNextIndex - 1,
       term - 1,
       logs.slice(followerNextIndex, logIndex + 1),
-      leaderCommitIndex
-    )
+      leaderCommitIndex)
     val response = AppendEntriesResult(term, success = true)
     val probe = TestProbe()
     val membership = Map(followerId -> probe.ref)

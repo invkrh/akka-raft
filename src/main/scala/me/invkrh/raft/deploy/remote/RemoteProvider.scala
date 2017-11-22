@@ -28,8 +28,7 @@ trait RemoteProvider extends Logging {
       "akka.actor.provider" -> "remote",
       "akka.remote.artery.enabled" -> "on",
       "akka.remote.artery.canonical.hostname" -> host,
-      "akka.remote.artery.canonical.port" -> port.toString
-    ).asJava
+      "akka.remote.artery.canonical.port" -> port.toString).asJava
     val conf = ConfigFactory.parseMap(config).withFallback(ConfigFactory.load())
     val sys = ActorSystem(systemName, conf)
     sys.whenTerminated foreach { _ =>

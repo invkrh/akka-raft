@@ -30,9 +30,8 @@ sealed trait MessageHub extends Logging {
   }
 
   def distributeRPCRequest(
-    maxResponseTime: FiniteDuration,
-    retries: Int = 1
-  ): Future[Iterable[Exchange]] = {
+      maxResponseTime: FiniteDuration,
+      retries: Int = 1): Future[Iterable[Exchange]] = {
     // tighten timeout duration
     implicit val timeout: Timeout =
       Timeout((maxResponseTime.toMillis / (retries + 1) * 0.8).toLong, MILLISECONDS)
@@ -51,31 +50,28 @@ sealed trait MessageHub extends Logging {
 }
 
 case class CandidateMessageHub(
-  term: Int,
-  selfId: Int,
-  logs: List[LogEntry],
-  members: Map[Int, ActorRef]
-)(implicit val scheduler: Scheduler, val executor: ExecutionContext)
-    extends MessageHub {
+    term: Int,
+    selfId: Int,
+    logs: List[LogEntry],
+    members: Map[Int, ActorRef])(implicit val scheduler: Scheduler, val executor: ExecutionContext)
+  extends MessageHub {
   def request(followerId: Int): RPCRequest = {
     RequestVote(
       term = term,
       candidateId = selfId,
       lastLogIndex = logs.size - 1,
-      lastLogTerm = logs.last.term
-    )
+      lastLogTerm = logs.last.term)
   }
 }
 
 case class LeaderMessageHub(
-  term: Int,
-  selfId: Int,
-  commitIndex: Int,
-  nextIndex: Map[Int, Int],
-  logs: List[LogEntry],
-  members: Map[Int, ActorRef]
-)(implicit val scheduler: Scheduler, val executor: ExecutionContext)
-    extends MessageHub {
+    term: Int,
+    selfId: Int,
+    commitIndex: Int,
+    nextIndex: Map[Int, Int],
+    logs: List[LogEntry],
+    members: Map[Int, ActorRef])(implicit val scheduler: Scheduler, val executor: ExecutionContext)
+  extends MessageHub {
   def request(followerId: Int): RPCRequest = {
     val lastLogIndex: Int = logs.size - 1
     val followNextIndex = nextIndex(followerId)
@@ -87,7 +83,6 @@ case class LeaderMessageHub(
       entries =
         if (lastLogIndex >= followNextIndex) logs.drop(followNextIndex)
         else List[LogEntry](),
-      leaderCommit = commitIndex
-    )
+      leaderCommit = commitIndex)
   }
 }

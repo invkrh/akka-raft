@@ -35,9 +35,8 @@ object NetworkUtils extends Logging {
   }
 
   def resolveRefByName(systemName: String, hostName: String, port: Int, actorName: String)(
-    implicit system: ActorSystem,
-    timeout: FiniteDuration
-  ): ActorRef = {
+      implicit system: ActorSystem,
+      timeout: FiniteDuration): ActorRef = {
     val target = s"akka://$raftSystemName@$hostName:$port/user/$actorName"
     try {
       Await.result(system.actorSelection(target).resolveOne(timeout), timeout)
@@ -47,16 +46,14 @@ object NetworkUtils extends Logging {
   }
 
   def resolveRefByName(systemName: String, address: CanonicalAddress, actorName: String)(
-    implicit system: ActorSystem,
-    timeout: FiniteDuration
-  ): ActorRef = {
+      implicit system: ActorSystem,
+      timeout: FiniteDuration): ActorRef = {
     resolveRefByName(systemName, address.hostName, address.port, actorName)
   }
 
   def resolveRefByName(systemName: String, address: String, actorName: String)(
-    implicit system: ActorSystem,
-    timeout: FiniteDuration
-  ): ActorRef = {
+      implicit system: ActorSystem,
+      timeout: FiniteDuration): ActorRef = {
     resolveRefByName(systemName, CanonicalAddress(address), actorName)
   }
 
@@ -90,8 +87,7 @@ object NetworkUtils extends Logging {
               logWarn(
                 "Your hostname, " + InetAddress.getLocalHost.getHostName + " resolves to" +
                   " a loopback address: " + address.getHostAddress + "; using " +
-                  strippedAddress.getHostAddress + " instead (on interface " + ni.getName + ")"
-              )
+                  strippedAddress.getHostAddress + " instead (on interface " + ni.getName + ")")
               logWarn("Set RAFT_LOCAL_IP if you need to bind to another address")
               Some(strippedAddress.getHostAddress)
             } else {
@@ -103,8 +99,7 @@ object NetworkUtils extends Logging {
             logWarn(
               "Your hostname, " + InetAddress.getLocalHost.getHostName + " resolves to" +
                 " a loopback address: " + address.getHostAddress + ", but we couldn't find any" +
-                " external IP address!"
-            )
+                " external IP address!")
             logWarn("Set RAFT_LOCAL_IP if you need to bind to another address")
             address.getHostAddress
           }

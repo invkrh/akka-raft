@@ -37,7 +37,7 @@ case class Reply(msg: RaftMessage) extends ProbeCheck {
 }
 
 case class MinorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None)
-    extends ProbeCheck {
+  extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     val minor = (probes.size + 1) / 2 - 1
     probes.take(1) foreach (_ reply msg)
@@ -49,7 +49,7 @@ case class MinorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None
 }
 
 case class MajorReply(msg: RaftMessage, msgForOthers: Option[RaftMessage] = None)
-    extends ProbeCheck {
+  extends ProbeCheck {
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     val major = (probes.size + 1) / 2 + 1
     probes.take(major) foreach (_ reply msg)
@@ -68,8 +68,8 @@ case class Delay(sleep: FiniteDuration, action: ProbeCheck) extends ProbeCheck {
 }
 
 case class Within(min: FiniteDuration, max: FiniteDuration, actions: ProbeCheck*)(
-  implicit system: ActorSystem
-) extends ProbeCheck {
+    implicit system: ActorSystem)
+  extends ProbeCheck {
   val loosenFactor = 0.1
   override def execute(server: ActorRef, probes: Seq[TestProbe]): Unit = {
     val minMS = min.toMillis

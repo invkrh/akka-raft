@@ -8,13 +8,13 @@ object AdminMessage {
   case object GetStatus extends RaftMessage
   case class Membership(memberDict: Map[Int, ActorRef]) extends RaftMessage
   case class Status(
-    serverID: Int,
-    term: Int,
-    state: ServerState.Value,
-    leader: Option[Int],
-    nextIndex: Map[Int, Int],
-    matchIndex: Map[Int, Int],
-    commitIndex: Int,
-    lastApplied: Int
-  ) extends RaftMessage
+      serverID: Int,
+      term: Int,
+      state: ServerState.Value,
+      leader: Option[Int],
+      nextIndex: Map[Int, Int],
+      matchIndex: Map[Int, Int],
+      commitIndex: Int,
+      lastApplied: Int)
+    extends RaftMessage
 }

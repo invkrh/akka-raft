@@ -47,8 +47,7 @@ class IntegrationTest extends TestHarness { self =>
       val serverRef =
         resolveRefByName(firstLauncher.systemName, firstLauncher.address, raftServerName + "*")(
           firstLauncher.system,
-          timeoutDuration
-        )
+          timeoutDuration)
 
       /**
        * Check leader has been elected

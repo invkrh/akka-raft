@@ -1,10 +1,7 @@
 package me.invkrh.raft.util
 
 import me.invkrh.raft.deploy.RaftConfig
-import me.invkrh.raft.exception.{
-  RaftConfigDirectoryNotFoundException,
-  RaftConfigFileNotFoundException
-}
+import me.invkrh.raft.exception.{RaftConfigDirectoryNotFoundException, RaftConfigFileNotFoundException}
 import me.invkrh.raft.kit.{SysEnvUtils, TestHarness}
 
 class RaftConfigTest extends TestHarness {

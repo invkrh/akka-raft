@@ -70,14 +70,12 @@ sealed trait EndpointChecker {
     val supervisor: ActorRef =
       system.actorOf(
         Props(new ExceptionDetector(s"svr-$id", probes.map(_.ref): _*)),
-        s"supervisor-${UID()}"
-      )
+        s"supervisor-${UID()}")
     val server: ActorRef = {
       val pb = TestProbe()
       supervisor.tell(
         Server.props(id, electionTime, electionTime, tickTime, 0, memoryStore),
-        pb.ref
-      )
+        pb.ref)
       pb.expectMsgType[ActorRef]
     }
     val dict = probes.zipWithIndex.map {
