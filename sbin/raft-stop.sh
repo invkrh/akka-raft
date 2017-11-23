@@ -4,7 +4,7 @@ if [ -z "${RAFT_HOME}" ]; then
     export RAFT_HOME="$(cd "`dirname "$0"`"/..; pwd)"
 fi
 
-CLASS="me.invkrh.raft.deploy.remote.LauncherRemoteSystem"
+CLASS="me.invkrh.raft.deploy.remote.ServerLauncherSystem"
 
 . $RAFT_HOME/sbin/raft-env.sh
 
