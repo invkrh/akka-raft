@@ -123,6 +123,7 @@ case $option in
                 kill "$TARGET_ID" && rm -f "$pid"
             else
                 echo "no $class to stop"
+                rm -f "$pid"
             fi
         else
           echo "no $class to stop"
