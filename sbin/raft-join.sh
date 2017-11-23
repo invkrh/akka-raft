@@ -8,8 +8,8 @@ CLASS="me.invkrh.raft.deploy.remote.ServerLauncherSystem"
 
 . $RAFT_HOME/sbin/raft-env.sh
 
-if [[ "$@" = *--help ]] || [[ "$@" = *-h ]]; then
-    echo "Usage: ./sbin/raft-join.sh <master-url> [options]"
+if [[ "$@" = *--help ]] || [[ "$@" = *-h ]] || [[ "$#" != 1 ]]; then
+    echo "Usage: ./sbin/raft-join.sh <master-url>"
     exit 1
 fi
 
