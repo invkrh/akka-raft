@@ -18,6 +18,7 @@ project/plugins/project/
 
 # Intellij specific
 .idea/
+*.iml
 
 # project specific
 build/
