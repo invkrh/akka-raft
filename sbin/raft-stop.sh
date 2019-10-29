@@ -4,14 +4,12 @@ if [ -z "${RAFT_HOME}" ]; then
     export RAFT_HOME="$(cd "`dirname "$0"`"/..; pwd)"
 fi
 
-CLASS="me.invkrh.raft.deploy.remote.ServerLauncherSystem"
+. $RAFT_HOME/sbin/raft-config.sh
 
-. $RAFT_HOME/sbin/raft-env.sh
+class="me.invkrh.raft.deploy.remote.ServerLauncherSystem"
 
-if [ "$RAFT_SERVER_INSTANCES" = "" ]; then
-    "${RAFT_HOME}/sbin"/raft-daemon.sh stop $CLASS 1 "$@"
-else
-    for ((i=0; i<$RAFT_SERVER_INSTANCES; i++)); do
-        "${RAFT_HOME}/sbin"/raft-daemon.sh stop $CLASS $(( 1 + $i )) "$@"
-    done
-fi
+curr_ins=`ls $RAFT_PID_DIR | grep $class | wc -l`
+
+for ((i=0; i<$curr_ins; i++)); do
+    "${RAFT_HOME}/sbin"/raft-daemon.sh stop $class $(( 1 + $i )) "$@"
+done

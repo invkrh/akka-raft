@@ -12,8 +12,9 @@ if [ -z "${RAFT_HOME}" ]; then
     export RAFT_HOME="$(cd "`dirname "$0"`"/..; pwd)"
 fi
 
-export RAFT_CONF_DIR="${RAFT_CONF_DIR:-"${RAFT_HOME}/conf"}"
+. $RAFT_HOME/sbin/raft-config.sh
 
+# get arguments
 option=$1
 shift
 class=$1
@@ -21,31 +22,28 @@ shift
 instance=$1
 shift
 
-if [ "$SPARK_IDENT_STRING" = "" ]; then
+if [ "$RAFT_IDENT_STRING" = "" ]; then
     export RAFT_IDENT_STRING="${USER/./}"
 fi
 
-# get log directory
+# create log directory
 if [ "$RAFT_LOG_DIR" = "" ]; then
     export RAFT_LOG_DIR="${RAFT_HOME}/logs"
 fi
 mkdir -p "$RAFT_LOG_DIR"
-touch "$RAFT_LOG_DIR"/.spark_test > /dev/null 2>&1
+
+# test if log dir writable
+touch "$RAFT_LOG_DIR"/.raft_test > /dev/null 2>&1
 TEST_LOG_DIR=$?
 if [ "${TEST_LOG_DIR}" = "0" ]; then
-    rm -f "$RAFT_LOG_DIR"/.spark_test
+    rm -f "$RAFT_LOG_DIR"/.raft_test
 else
     chown "$RAFT_IDENT_STRING" "$RAFT_LOG_DIR"
 fi
 
-# get pid directory
-if [ "$RAFT_PID_DIR" = "" ]; then
-    RAFT_PID_DIR=/tmp
-fi
-
 # local variable
 log="$RAFT_LOG_DIR/raft-$RAFT_IDENT_STRING-$class-$instance.out"
-pid="$RAFT_PID_DIR/raft-$RAFT_IDENT_STRING-$class-$instance.pid"
+pid="$RAFT_PID_DIR/raft-$RAFT_IDENT_STRING-$class-$instance.pid" # pid dir is defined in raft-config
 
 function raft_rotate_log () {
     log=$1;
@@ -105,29 +103,33 @@ function join() {
     fi
 }
 
+function stop() {
+    if [ -f $pid ]; then
+        TARGET_ID="$(cat "$pid")"
+        if [[ $(ps -p "$TARGET_ID" -o comm=) =~ "java" ]]; then
+            echo "stopping $class"
+            kill "$TARGET_ID" && rm -f "$pid"
+        else
+            echo "no $class to stop"
+            rm -f "$pid"
+        fi
+    else
+        echo "no $class to stop"
+    fi
+}
+
 case $option in
 
     (init)
-        init $class $@
+        init $class $@ # launch class with its arguments of main func
         ;;
 
     (join)
-        join $class $@
+        join $class $@ # launch class with its arguments of main func
         ;;
 
     (stop)
-        if [ -f $pid ]; then
-            TARGET_ID="$(cat "$pid")"
-            if [[ $(ps -p "$TARGET_ID" -o comm=) =~ "java" ]]; then
-                echo "stopping $class"
-                kill "$TARGET_ID" && rm -f "$pid"
-            else
-                echo "no $class to stop"
-                rm -f "$pid"
-            fi
-        else
-          echo "no $class to stop"
-        fi
+        stop
         ;;
 
     (status)

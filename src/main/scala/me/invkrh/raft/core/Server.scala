@@ -18,6 +18,8 @@ import me.invkrh.raft.message.TimerMessage._
 import me.invkrh.raft.storage.DataStore
 import me.invkrh.raft.util._
 
+// TODO: reduce resource usage, cpu and network
+
 object Server {
   def props(
       id: Int,
@@ -212,7 +214,7 @@ class Server(
             becomeLeader()
         }
       } else {
-        logInfo(s"Majority is NOT reached ($hint}) at term $curTerm")
+        logInfo(s"Majority is NOT reached ($hint) at term $curTerm")
       }
     }
   }
@@ -373,28 +375,24 @@ class Server(
 
   def becomeFollower(newTerm: Int, newLeader: Option[Int] = None): Unit = {
     curTerm = newTerm
-
     votedFor = None
 
-    if (newLeader.isEmpty) { // New leader is unknown
-      if (curTerm == 0) {
-        logInfo(s"At term $curTerm, start up as follower")
-      } else {
-        logInfo(s"At term $curTerm, request with higher term detected, become follower")
-      }
-      curLeaderId = None
-    } else { // New leader id is given
-      if (newLeader != curLeaderId) { // new leader is not current leader
-        logInfo(s"At term $curTerm, new leader $newLeader detected, become follower")
-        curLeaderId = newLeader
-      }
-      for {
-        leaderId <- curLeaderId
-        leaderRef <- members.get(leaderId)
-      } yield {
-        clientMessageCache.flushTo(leaderRef)
-      }
+    newLeader match {
+      case Some(newLeaderId) =>
+        if (!curLeaderId.contains(newLeaderId)) { // new leader is not current leader
+          logInfo(s"At term $curTerm, new leader (id = $newLeaderId) detected, become follower")
+          curLeaderId = newLeader
+        }
+        members.get(newLeaderId) foreach clientMessageCache.flushTo
+      case None =>
+        if (curTerm == 0) {
+          logInfo(s"At term $curTerm, start up as follower")
+        } else {
+          logInfo(s"At term $curTerm, request with higher term detected, become follower")
+        }
+        curLeaderId = None
     }
+
     curState = ServerState.Follower
     context.become(follower)
     heartBeatTimer.stop()
